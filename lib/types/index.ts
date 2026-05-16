@@ -8,6 +8,7 @@ export type ThreadStatus =
 export type EmailIntent =
   | "appointment"
   | "location"
+  | "general_info"
   | "soap_note"
   | "provide_identity"
   | "provide_dob"
@@ -60,14 +61,15 @@ export interface AppointmentRecord {
 
 export interface LocationRecord {
   id: string;
-  name: string;
+  title: string;
   address: string | null;
-  hours: string | null;
-  phone: string | null;
-  lat: number | null;
-  lng: number | null;
-  city: string | null;
-  zip: string | null;
+  locationCode: string | null;
+}
+
+export interface ServiceRecord {
+  id: string;
+  titleEn: string;
+  titleEs: string | null;
 }
 
 export interface SoapNoteRecord {
@@ -89,6 +91,7 @@ export interface ProcessorFacts {
   appointment?: AppointmentRecord;
   locations?: LocationRecord[];
   nearestLocation?: LocationRecord;
+  services?: ServiceRecord[];
   soapNote?: SoapNoteRecord;
   needsDob?: boolean;
   needsName?: boolean;

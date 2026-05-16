@@ -10,6 +10,7 @@ const classificationSchema = z.object({
     "provide_identity",
     "provide_dob",
     "alternate_email",
+    "general_info",
     "greeting",
     "unknown",
   ]),
@@ -24,7 +25,8 @@ Return JSON only.
 
 Intents:
 - appointment: asking about appointment time, schedule, when to come
-- location: clinic address, hours, directions, nearest location
+- location: clinic address, directions, which location, nearest clinic
+- general_info: services offered, what do you treat, general questions about the clinic (no verification needed)
 - soap_note: requesting visit notes, SOAP note, medical summary from visit
 - provide_identity: patient gives their name for verification
 - provide_dob: patient gives date of birth

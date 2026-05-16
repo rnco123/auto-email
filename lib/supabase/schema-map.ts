@@ -1,5 +1,5 @@
 /**
- * Map your Supabase clinical tables here.
+ * Map your Supabase tables here.
  * Update table and column names to match your database.
  */
 export const schemaMap = {
@@ -20,15 +20,15 @@ export const schemaMap = {
   locations: {
     table: "locations",
     id: "id",
-    name: "name",
+    title: "title",
     address: "address",
-    hours: "hours",
-    phone: "phone",
-    lat: "lat",
-    lng: "lng",
-    city: "city",
-    zip: "zip",
-    isPublic: "is_public",
+    locationCode: "location_code",
+  },
+  services: {
+    table: "services",
+    id: "id",
+    titleEn: "title_en",
+    titleEs: "title_es",
   },
   soapNotes: {
     table: "soap_notes",

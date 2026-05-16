@@ -4,7 +4,8 @@ import {
   findNearestLocation,
   getLatestSoapNote,
   getUpcomingAppointment,
-  listPublicLocations,
+  listLocations,
+  listServices,
 } from "@/lib/supabase/clinical-queries";
 import {
   getThread,
@@ -14,7 +15,11 @@ import {
 } from "@/lib/supabase/email-store";
 import { fetchReceivedEmail, sendReply } from "@/lib/resend/client";
 import { resolveIdentity } from "./identity";
-import { buildFactsEnvelope, requiresVerification } from "./phi-policy";
+import {
+  buildFactsEnvelope,
+  isPublicReadonlyIntent,
+  requiresVerification,
+} from "./phi-policy";
 import type {
   EmailIntent,
   EmailThread,
@@ -47,49 +52,123 @@ export async function processInboundEmail(
     intent = thread.last_intent;
   }
 
-  const identity = await resolveIdentity(
-    extractEmail(payload.from),
-    classification.extractedName,
-    classification.extractedDob,
-    thread,
-    claimsAlternateEmail
-  );
-
   let facts: ProcessorFacts = {};
   let status: ThreadStatus = thread.status;
 
-  if (identity.needsAlternateVerification) {
-    status = "needs_dob";
-    facts = {
-      needsDob: !identity.dobVerified,
-      needsName: !identity.nameMatched,
-      alternateEmail: true,
-    };
-  } else if (!identity.patient) {
-    status = "unknown_sender";
-    facts = { unknownSender: true };
-  } else if (requiresVerification(intent) && !identity.verifiedPatientId) {
-    status = "needs_dob";
-    facts = {
-      needsDob: !identity.dobVerified,
-      needsName: !identity.nameMatched,
-      patientName: identity.patient.fullName,
-      alternateEmail: identity.verifiedViaAlternateEmail,
-    };
-  } else if (identity.verifiedPatientId && identity.patient) {
-    status = "verified";
-    facts = await gatherFacts(
-      intent,
-      identity.patient.id,
-      classification.extractedLocationHint
-    );
-  } else if (intent === "location") {
-    facts = await gatherFacts("location", null, classification.extractedLocationHint);
+  if (isPublicReadonlyIntent(intent)) {
+    facts = await gatherPublicFacts(intent, classification.extractedLocationHint);
     facts.publicOnly = true;
+    status = "active";
+  } else {
+    const identity = await resolveIdentity(
+      extractEmail(payload.from),
+      classification.extractedName,
+      classification.extractedDob,
+      thread,
+      claimsAlternateEmail
+    );
+
+    if (identity.needsAlternateVerification) {
+      status = "needs_dob";
+      facts = {
+        needsDob: !identity.dobVerified,
+        needsName: !identity.nameMatched,
+        alternateEmail: true,
+      };
+    } else if (!identity.patient) {
+      status = "unknown_sender";
+      facts = { unknownSender: true };
+    } else if (requiresVerification(intent) && !identity.verifiedPatientId) {
+      status = "needs_dob";
+      facts = {
+        needsDob: !identity.dobVerified,
+        needsName: !identity.nameMatched,
+        patientName: identity.patient.fullName,
+        alternateEmail: identity.verifiedViaAlternateEmail,
+      };
+    } else if (identity.verifiedPatientId && identity.patient) {
+      status = "verified";
+      facts = await gatherPatientFacts(
+        intent,
+        identity.patient.id,
+        classification.extractedLocationHint
+      );
+    }
+
+    facts = buildFactsEnvelope(intent, identity, facts);
+    await sendReplyAndUpdateThread(
+      payload,
+      thread,
+      intent,
+      facts,
+      status,
+      identity.verifiedPatientId ?? thread.verified_patient_id
+    );
+    return;
   }
 
-  facts = buildFactsEnvelope(intent, identity, facts);
+  facts = buildFactsEnvelope(intent, {
+    patient: null,
+    emailMatched: false,
+    nameMatched: false,
+    dobVerified: false,
+    verifiedPatientId: null,
+  }, facts);
 
+  await sendReplyAndUpdateThread(
+    payload,
+    thread,
+    intent,
+    facts,
+    status,
+    thread.verified_patient_id
+  );
+}
+
+async function gatherPublicFacts(
+  intent: EmailIntent,
+  locationHint: string | null
+): Promise<ProcessorFacts> {
+  const locations = await listLocations();
+  const nearest = locationHint
+    ? findNearestLocation(locations, locationHint) ?? undefined
+    : locations[0] ?? undefined;
+
+  if (intent === "location") {
+    return { locations, nearestLocation: nearest, publicOnly: true };
+  }
+
+  const services = await listServices();
+  return { locations, nearestLocation: nearest, services, publicOnly: true };
+}
+
+async function gatherPatientFacts(
+  intent: EmailIntent,
+  patientId: string,
+  locationHint: string | null
+): Promise<ProcessorFacts> {
+  if (intent === "appointment") {
+    const appointment = await getUpcomingAppointment(patientId);
+    return { appointment: appointment ?? undefined };
+  }
+
+  if (intent === "soap_note") {
+    const soapNote = await getLatestSoapNote(patientId);
+    if (!soapNote) return { noSoapOnFile: true };
+    return { soapNote };
+  }
+
+  return {};
+}
+
+async function sendReplyAndUpdateThread(
+  payload: InboundEmailPayload,
+  thread: EmailThread,
+  intent: EmailIntent,
+  facts: ProcessorFacts,
+  status: ThreadStatus,
+  verifiedPatientId: string | null
+): Promise<void> {
   const history = await getThreadMessages(thread.id);
   const replyText = await generateReply(intent, payload.text, facts, history);
 
@@ -108,38 +187,9 @@ export async function processInboundEmail(
   await updateThread(thread.id, {
     status,
     last_intent: intent,
-    verified_patient_id: identity.verifiedPatientId ?? thread.verified_patient_id,
+    verified_patient_id: verifiedPatientId,
     message_id_root: thread.message_id_root ?? payload.messageId ?? null,
   });
-}
-
-async function gatherFacts(
-  intent: EmailIntent,
-  patientId: string | null,
-  locationHint: string | null
-): Promise<ProcessorFacts> {
-  if (intent === "location") {
-    const locations = await listPublicLocations();
-    const nearest = locationHint
-      ? findNearestLocation(locations, locationHint) ?? undefined
-      : locations[0] ?? undefined;
-    return { locations, nearestLocation: nearest, publicOnly: true };
-  }
-
-  if (!patientId) return {};
-
-  if (intent === "appointment") {
-    const appointment = await getUpcomingAppointment(patientId);
-    return { appointment: appointment ?? undefined };
-  }
-
-  if (intent === "soap_note") {
-    const soapNote = await getLatestSoapNote(patientId);
-    if (!soapNote) return { noSoapOnFile: true };
-    return { soapNote };
-  }
-
-  return {};
 }
 
 function inferPriorIntent(last: EmailIntent | null): EmailIntent | null {

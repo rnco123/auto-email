@@ -5,6 +5,11 @@ export function requiresVerification(intent: EmailIntent): boolean {
   return intent === "appointment" || intent === "soap_note";
 }
 
+/** Public clinic info — no patient verification required. */
+export function isPublicReadonlyIntent(intent: EmailIntent): boolean {
+  return intent === "location" || intent === "general_info";
+}
+
 export function canDiscloseSoap(intent: EmailIntent, identity: IdentityState): boolean {
   return intent === "soap_note" && identity.dobVerified && identity.nameMatched;
 }
@@ -18,6 +23,10 @@ export function buildFactsEnvelope(
   identity: IdentityState,
   facts: ProcessorFacts
 ): ProcessorFacts {
+  if (facts.publicOnly) {
+    return facts;
+  }
+
   if (identity.needsAlternateVerification) {
     return {
       needsDob: !identity.dobVerified,

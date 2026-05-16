@@ -4,12 +4,14 @@ import type {
   AppointmentRecord,
   LocationRecord,
   PatientRecord,
+  ServiceRecord,
   SoapNoteRecord,
 } from "@/lib/types";
 
 const p = schemaMap.patients;
 const a = schemaMap.appointments;
 const l = schemaMap.locations;
+const svc = schemaMap.services;
 const s = schemaMap.soapNotes;
 
 function mapPatientRow(row: Record<string, unknown>): PatientRecord {
@@ -174,12 +176,12 @@ export async function getUpcomingAppointment(
   if (locationId) {
     const { data: loc } = await supabase
       .from(l.table)
-      .select(`${l.name}, ${l.address}`)
+      .select(`${l.title}, ${l.address}`)
       .eq(l.id, locationId)
       .maybeSingle();
     if (loc) {
       const lr = loc as Record<string, unknown>;
-      locationName = String(lr[l.name]);
+      locationName = String(lr[l.title]);
       locationAddress = lr[l.address] ? String(lr[l.address]) : null;
     }
   }
@@ -192,18 +194,16 @@ export async function getUpcomingAppointment(
   };
 }
 
-export async function listPublicLocations(): Promise<LocationRecord[]> {
+export async function listLocations(): Promise<LocationRecord[]> {
   const supabase = getSupabaseAdmin();
 
   const { data, error } = await supabase
     .from(l.table)
-    .select(
-      `${l.id}, ${l.name}, ${l.address}, ${l.hours}, ${l.phone}, ${l.lat}, ${l.lng}, ${l.city}, ${l.zip}`
-    )
-    .eq(l.isPublic, true);
+    .select(`${l.id}, ${l.title}, ${l.address}, ${l.locationCode}`)
+    .order(l.id, { ascending: true });
 
   if (error) {
-    console.error("listPublicLocations error:", error.message);
+    console.error("listLocations error:", error.message);
     return [];
   }
 
@@ -211,33 +211,34 @@ export async function listPublicLocations(): Promise<LocationRecord[]> {
     const r = row as Record<string, unknown>;
     return {
       id: String(r[l.id]),
-      name: String(r[l.name]),
+      title: String(r[l.title] ?? "Clinic location"),
       address: r[l.address] ? String(r[l.address]) : null,
-      hours: r[l.hours] ? String(r[l.hours]) : null,
-      phone: r[l.phone] ? String(r[l.phone]) : null,
-      lat: r[l.lat] != null ? Number(r[l.lat]) : null,
-      lng: r[l.lng] != null ? Number(r[l.lng]) : null,
-      city: r[l.city] ? String(r[l.city]) : null,
-      zip: r[l.zip] ? String(r[l.zip]) : null,
+      locationCode: r[l.locationCode] ? String(r[l.locationCode]) : null,
     };
   });
 }
 
-function haversineKm(
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number
-): number {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const x =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(x));
+export async function listServices(): Promise<ServiceRecord[]> {
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from(svc.table)
+    .select(`${svc.id}, ${svc.titleEn}, ${svc.titleEs}`)
+    .order(svc.id, { ascending: true });
+
+  if (error) {
+    console.error("listServices error:", error.message);
+    return [];
+  }
+
+  return (data ?? []).map((row) => {
+    const r = row as Record<string, unknown>;
+    return {
+      id: String(r[svc.id]),
+      titleEn: String(r[svc.titleEn]),
+      titleEs: r[svc.titleEs] ? String(r[svc.titleEs]) : null,
+    };
+  });
 }
 
 export function findNearestLocation(
@@ -248,20 +249,18 @@ export function findNearestLocation(
   const h = hint.toLowerCase();
 
   const textMatches = locations.filter((loc) => {
-    const parts = [loc.name, loc.address, loc.city, loc.zip]
+    const parts = [loc.title, loc.address, loc.locationCode]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
-    return parts.includes(h) || h.split(/\s+/).some((w) => w.length > 2 && parts.includes(w));
+    return (
+      parts.includes(h) ||
+      h.split(/\s+/).some((w) => w.length > 2 && parts.includes(w))
+    );
   });
 
-  if (textMatches.length === 1) return textMatches[0];
-  if (textMatches.length > 1) return textMatches[0];
-
-  const withCoords = locations.filter((loc) => loc.lat != null && loc.lng != null);
-  if (withCoords.length === 0) return locations[0];
-
-  return withCoords[0];
+  if (textMatches.length >= 1) return textMatches[0];
+  return locations[0];
 }
 
 export async function getLatestSoapNote(
