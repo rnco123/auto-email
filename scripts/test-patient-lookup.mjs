@@ -27,7 +27,12 @@ const { data, error } = await supabase
 
 if (error) {
   console.log("PATIENTS QUERY FAILED:", error.message);
-  console.log("\nRun supabase/migrations/003 or 006 in the Supabase SQL editor.");
+  console.log(
+    "\nRun supabase/migrations/006_patients_read_policy_fix.sql in Supabase SQL Editor"
+  );
+  console.log(
+    "(must include GRANT lines — policy alone is not enough). Then re-run this script."
+  );
   process.exit(1);
 }
 
