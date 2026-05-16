@@ -21,6 +21,7 @@ import {
 } from "@/lib/resend/client";
 import { collectIdentityHints } from "./extract-identity";
 import { resolveIdentity } from "./identity";
+import { resolveIntent } from "./public-intent";
 import {
   buildFactsEnvelope,
   isPublicReadonlyIntent,
@@ -55,9 +56,7 @@ export async function processInboundEmail(
   ) {
     intent = inferPriorIntent(thread.last_intent) ?? "appointment";
   }
-  if (intent === "greeting" && thread.last_intent) {
-    intent = thread.last_intent;
-  }
+  intent = resolveIntent(intent, payload.text, thread.last_intent);
 
   let facts: ProcessorFacts = {};
   let status: ThreadStatus = thread.status;
