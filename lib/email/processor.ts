@@ -19,14 +19,13 @@ import {
   sendReply,
   type EmailAttachment,
 } from "@/lib/resend/client";
-import { collectIdentityHints } from "./extract-identity";
-import { resolveIdentity } from "./identity";
-import { resolveIntent } from "./public-intent";
 import {
   buildFactsEnvelope,
   isPublicReadonlyIntent,
-  requiresVerification,
+  isVerificationDisabled,
 } from "./phi-policy";
+import { resolveIntent } from "./public-intent";
+import { resolvePatientOptional } from "./resolve-patient";
 import type {
   EmailIntent,
   EmailThread,
@@ -45,8 +44,6 @@ export async function processInboundEmail(
     thread.status
   );
 
-  const claimsAlternateEmail = classification.intent === "alternate_email";
-
   let intent = classification.intent;
   if (
     intent === "provide_dob" ||
@@ -56,8 +53,40 @@ export async function processInboundEmail(
   ) {
     intent = inferPriorIntent(thread.last_intent) ?? "appointment";
   }
-  intent = resolveIntent(intent, payload.text, thread.last_intent);
 
+  const noVerification = isVerificationDisabled();
+  intent = resolveIntent(intent, payload.text, thread.last_intent, noVerification);
+
+  if (noVerification) {
+    const patient = await resolvePatientOptional(
+      extractEmail(payload.from),
+      thread,
+      payload.text,
+      classification
+    );
+    const facts = await gatherFactsOpenAccess(
+      intent,
+      patient?.id ?? null,
+      classification.extractedLocationHint,
+      classification.extractedEncounterDate
+    );
+    await sendReplyAndUpdateThread(
+      payload,
+      thread,
+      intent,
+      facts,
+      "active",
+      patient?.id ?? thread.verified_patient_id
+    );
+    return;
+  }
+
+  // Production path with verification (DISABLE_PATIENT_VERIFICATION=false)
+  const { resolveIdentity } = await import("./identity");
+  const { collectIdentityHints } = await import("./extract-identity");
+  const { requiresVerification } = await import("./phi-policy");
+
+  const claimsAlternateEmail = classification.intent === "alternate_email";
   let facts: ProcessorFacts = {};
   let status: ThreadStatus = thread.status;
 
@@ -124,13 +153,17 @@ export async function processInboundEmail(
     return;
   }
 
-  facts = buildFactsEnvelope(intent, {
-    patient: null,
-    emailMatched: false,
-    nameMatched: false,
-    dobVerified: false,
-    verifiedPatientId: null,
-  }, facts);
+  facts = buildFactsEnvelope(
+    intent,
+    {
+      patient: null,
+      emailMatched: false,
+      nameMatched: false,
+      dobVerified: false,
+      verifiedPatientId: null,
+    },
+    facts
+  );
 
   await sendReplyAndUpdateThread(
     payload,
@@ -140,6 +173,41 @@ export async function processInboundEmail(
     status,
     thread.verified_patient_id
   );
+}
+
+async function gatherFactsOpenAccess(
+  intent: EmailIntent,
+  patientId: string | null,
+  locationHint: string | null,
+  encounterDateHint: string | null
+): Promise<ProcessorFacts> {
+  const publicIntent =
+    isPublicReadonlyIntent(intent) ||
+    intent === "unknown" ||
+    intent === "greeting"
+      ? intent === "location"
+        ? "location"
+        : "general_info"
+      : null;
+
+  if (publicIntent) {
+    const facts = await gatherPublicFacts(publicIntent, locationHint);
+    return { ...facts, publicOnly: true };
+  }
+
+  const pub = await gatherPublicFacts("general_info", locationHint);
+
+  if (!patientId) {
+    return { ...pub, publicOnly: true };
+  }
+
+  const clinical = await gatherPatientFacts(
+    intent,
+    patientId,
+    locationHint,
+    encounterDateHint
+  );
+  return { ...pub, ...clinical, publicOnly: false };
 }
 
 async function gatherPublicFacts(

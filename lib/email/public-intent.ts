@@ -22,17 +22,26 @@ export function detectPublicIntentFromText(body: string): EmailIntent | null {
 export function resolveIntent(
   classified: EmailIntent,
   body: string,
-  lastIntent: EmailIntent | null
+  lastIntent: EmailIntent | null,
+  verificationDisabled = false
 ): EmailIntent {
   const fromText = detectPublicIntentFromText(body);
   if (fromText) return fromText;
 
-  if (classified === "greeting" && lastIntent && !fromText) {
-    return lastIntent;
+  if (verificationDisabled) {
+    if (
+      classified === "unknown" ||
+      classified === "greeting" ||
+      classified === "provide_dob" ||
+      classified === "provide_identity" ||
+      classified === "alternate_email"
+    ) {
+      return "general_info";
+    }
   }
 
-  if (classified === "unknown" && fromText) {
-    return fromText;
+  if (classified === "greeting" && lastIntent && !fromText) {
+    return lastIntent;
   }
 
   return classified;
