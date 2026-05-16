@@ -54,6 +54,12 @@ export async function processInboundEmail(
   if (!identity.emailMatched) {
     status = "unknown_sender";
     facts = { unknownSender: true };
+    await updateThread(thread.id, {
+      status,
+      last_intent: intent,
+      message_id_root: thread.message_id_root ?? payload.messageId ?? null,
+    });
+    return;
   } else if (requiresVerification(intent) && !identity.dobVerified) {
     status = "needs_dob";
     facts = {

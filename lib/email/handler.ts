@@ -4,6 +4,7 @@ import {
   logInboundMessage,
   messageExists,
 } from "@/lib/supabase/email-store";
+import { sendAcknowledgmentReply } from "./ack-reply";
 import { processInboundEmail } from "./processor";
 import type { InboundEmailPayload } from "@/lib/types";
 
@@ -18,6 +19,7 @@ export async function handleInboundEmail(
 
   const thread = await getOrCreateThread(payload);
   await logInboundMessage(thread.id, payload);
+  await sendAcknowledgmentReply(payload, thread);
 
   if (options?.asyncQueue) {
     await enqueueJob(thread.id);

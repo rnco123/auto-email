@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listThreads } from "@/lib/supabase/email-store";
 import { checkSupabaseConnection } from "@/lib/supabase/health";
 import { seedSampleLogsIfEmpty } from "@/lib/supabase/seed-sample";
+import { RefreshButton } from "./refresh-button";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,10 @@ export default async function ThreadsPage() {
 
   return (
     <>
-      <h2 style={{ marginTop: 0 }}>Email threads</h2>
+      <div className="page-title-row">
+        <h2 style={{ marginTop: 0 }}>Email threads</h2>
+        <RefreshButton />
+      </div>
       <p className="muted">
         Inbound and outbound patient email conversations. Clinical data is never
         modified from this app.
