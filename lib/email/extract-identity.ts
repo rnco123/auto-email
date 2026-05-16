@@ -30,8 +30,24 @@ function extractKeyValueFields(text: string): IdentityHints {
       text
     )?.[1]?.trim() ?? null;
 
-  const name =
+  let name: string | null =
     first && last ? `${first} ${last}` : first ?? last;
+
+  if (!name) {
+    const labelName = /^name\s*[:=]\s*([^\n]+)/im.exec(text)?.[1]?.trim();
+    if (labelName) {
+      name = cleanName(labelName);
+      const parts = name.split(/\s+/).filter(Boolean);
+      if (parts.length >= 2) {
+        return {
+          name,
+          firstName: parts[0],
+          lastName: parts.slice(1).join(" "),
+          dob,
+        };
+      }
+    }
+  }
 
   return {
     name,
@@ -69,6 +85,17 @@ export function extractIdentityFromText(text: string): IdentityHints {
   return { name, firstName, lastName, dob };
 }
 
+function mergeHint(
+  primary: string | null,
+  ...fallbacks: (string | null | undefined)[]
+): string | null {
+  if (primary?.trim()) return primary.trim();
+  for (const value of fallbacks) {
+    if (value?.trim()) return value.trim();
+  }
+  return null;
+}
+
 export async function collectIdentityHints(
   currentBody: string,
   threadId: string,
@@ -77,18 +104,31 @@ export async function collectIdentityHints(
   classifiedFirstName: string | null = null,
   classifiedLastName: string | null = null
 ): Promise<IdentityHints> {
-  let name = classifiedName;
-  let firstName = classifiedFirstName;
-  let lastName = classifiedLastName;
-  let dob = classifiedDob;
+  const messages = await getThreadMessages(threadId);
+
+  const { extractPatientIdentityFromConversation } = await import(
+    "@/lib/openai/extract-identity"
+  );
+  const ai = await extractPatientIdentityFromConversation(
+    messages,
+    currentBody
+  );
 
   const fromCurrent = extractIdentityFromText(currentBody);
-  name = name ?? fromCurrent.name;
-  firstName = firstName ?? fromCurrent.firstName;
-  lastName = lastName ?? fromCurrent.lastName;
-  dob = dob ?? fromCurrent.dob;
 
-  const messages = await getThreadMessages(threadId);
+  let firstName = mergeHint(
+    ai.firstName,
+    classifiedFirstName,
+    fromCurrent.firstName
+  );
+  let lastName = mergeHint(
+    ai.lastName,
+    classifiedLastName,
+    fromCurrent.lastName
+  );
+  let name = mergeHint(ai.name, classifiedName, fromCurrent.name);
+  let dob = mergeHint(ai.dob, classifiedDob, fromCurrent.dob);
+
   const inboundBodies = messages
     .filter((m) => m.direction === "inbound" && m.body_text)
     .map((m) => m.body_text as string)

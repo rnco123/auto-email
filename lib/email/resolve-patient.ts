@@ -1,5 +1,6 @@
 import { collectIdentityHints } from "@/lib/email/extract-identity";
 import {
+  dobMatches,
   findPatientByEmail,
   findPatientById,
 } from "@/lib/supabase/clinical-queries";
@@ -9,6 +10,18 @@ import type { ClassificationResult, EmailThread, PatientRecord } from "@/lib/typ
 export type ResolvePatientResult =
   | { patient: PatientRecord; dbError: null }
   | { patient: null; dbError: string | null };
+
+function hasIdentityHints(hints: {
+  name: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  dob: string | null;
+}): boolean {
+  return !!(
+    hints.dob &&
+    (hints.name || (hints.firstName && hints.lastName))
+  );
+}
 
 /** Best-effort patient lookup — never blocks on missing verification. */
 export async function resolvePatientOptional(
@@ -22,9 +35,6 @@ export async function resolvePatientOptional(
     if (byThread) return { patient: byThread, dbError: null };
   }
 
-  const byEmail = await findPatientByEmail(senderEmail);
-  if (byEmail) return { patient: byEmail, dbError: null };
-
   const hints = await collectIdentityHints(
     body,
     thread.id,
@@ -33,6 +43,31 @@ export async function resolvePatientOptional(
     classification.extractedFirstName,
     classification.extractedLastName
   );
+
+  if (hasIdentityHints(hints)) {
+    const lookup = await lookupPatientByIdentity({
+      fullName: hints.name,
+      firstName: hints.firstName,
+      lastName: hints.lastName,
+      dob: hints.dob,
+    });
+
+    if (lookup.status === "found") {
+      return { patient: lookup.patient, dbError: null };
+    }
+    if (lookup.status === "db_error") {
+      return { patient: null, dbError: lookup.message };
+    }
+    return { patient: null, dbError: null };
+  }
+
+  const byEmail = await findPatientByEmail(senderEmail);
+  if (byEmail) {
+    if (hints.dob && !dobMatches(byEmail.dateOfBirth, hints.dob)) {
+      return { patient: null, dbError: null };
+    }
+    return { patient: byEmail, dbError: null };
+  }
 
   if (!hints.dob) {
     return { patient: null, dbError: null };

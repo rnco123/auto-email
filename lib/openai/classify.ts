@@ -46,10 +46,12 @@ Intents:
 
 Important: "Hello, what services do you offer?" → general_info (not greeting or unknown).
 
-Extract identity from ANY format (prose, "my name is…", or key:value like first_name: Meera):
+Extract patient identity from ANY format when present in the latest message or clearly in the thread:
+- Labels: "Name:", "DOB:", first_name/last_name/date_of_birth, etc.
+- Prose: "I'm Jane Doe, born 4/25/2001"
 - extractedFirstName, extractedLastName when separable
 - extractedName: full name if given as one string
-- extractedDob: date of birth (prefer YYYY-MM-DD)
+- extractedDob: date of birth (always YYYY-MM-DD when possible)
 - extractedLocationHint: city, zip, neighborhood, or "near me" context for location queries
 - extractedEncounterDate: visit or encounter date if mentioned (for SOAP note requests)`;
 
