@@ -36,7 +36,7 @@ export const schemaMap = {
     id: "id",
     patientId: "patient_id",
     /** Column used when asking patient to pick a visit date */
-    encounterDate: "encounter_date",
+    encounterDate: "created_at",
   },
   aiSoapNotes: {
     table: "ai_soapnotes",
