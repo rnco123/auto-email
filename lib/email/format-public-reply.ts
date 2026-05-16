@@ -37,6 +37,16 @@ export function formatSoapReply(facts: ProcessorFacts): string | null {
     ].join("\n");
   }
 
+  if (facts.clinicDataUnavailable) {
+    return [
+      "Our system cannot reach patient records right now (database access is not configured).",
+      "",
+      "Please ask your clinic admin to enable patient read access in Supabase, then try again.",
+      "",
+      "Thank you,",
+    ].join("\n");
+  }
+
   if (facts.soapPatientNotFound) {
     return [
       "We could not find a patient chart matching that name and date of birth.",

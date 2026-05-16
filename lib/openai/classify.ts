@@ -16,6 +16,8 @@ const classificationSchema = z.object({
     "unknown",
   ]),
   extractedName: z.string().nullable(),
+  extractedFirstName: z.string().nullable(),
+  extractedLastName: z.string().nullable(),
   extractedDob: z.string().nullable(),
   extractedLocationHint: z.string().nullable(),
   extractedEncounterDate: z.string().nullable(),
@@ -39,9 +41,10 @@ Intents:
 
 Important: "Hello, what services do you offer?" → general_info (not greeting or unknown).
 
-Extract:
-- extractedName: full name if mentioned
-- extractedDob: date of birth if mentioned (any format)
+Extract identity from ANY format (prose, "my name is…", or key:value like first_name: Meera):
+- extractedFirstName, extractedLastName when separable
+- extractedName: full name if given as one string
+- extractedDob: date of birth (prefer YYYY-MM-DD)
 - extractedLocationHint: city, zip, neighborhood, or "near me" context for location queries
 - extractedEncounterDate: visit or encounter date if mentioned (for SOAP note requests)`;
 
@@ -72,6 +75,8 @@ export async function classifyPatientEmail(
     return {
       intent: "unknown",
       extractedName: null,
+      extractedFirstName: null,
+      extractedLastName: null,
       extractedDob: null,
       extractedLocationHint: null,
       extractedEncounterDate: null,
@@ -83,6 +88,8 @@ export async function classifyPatientEmail(
   return {
     intent: d.intent as EmailIntent,
     extractedName: d.extractedName,
+    extractedFirstName: d.extractedFirstName,
+    extractedLastName: d.extractedLastName,
     extractedDob: d.extractedDob,
     extractedLocationHint: d.extractedLocationHint,
     extractedEncounterDate: d.extractedEncounterDate,

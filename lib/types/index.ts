@@ -91,6 +91,8 @@ export interface EncounterOption {
 export interface ClassificationResult {
   intent: EmailIntent;
   extractedName: string | null;
+  extractedFirstName: string | null;
+  extractedLastName: string | null;
   extractedDob: string | null;
   extractedLocationHint: string | null;
   extractedEncounterDate: string | null;
@@ -119,6 +121,7 @@ export interface ProcessorFacts {
   noSoapOnFile?: boolean;
   needsPatientForSoap?: boolean;
   soapPatientNotFound?: boolean;
+  clinicDataUnavailable?: boolean;
   needsPatientInfo?: "soap" | "appointment";
   publicOnly?: boolean;
 }

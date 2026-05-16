@@ -64,9 +64,11 @@ export async function processInboundEmail(
       payload.text,
       thread.id,
       classification.extractedName,
-      classification.extractedDob
+      classification.extractedDob,
+      classification.extractedFirstName,
+      classification.extractedLastName
     );
-    const patient = await resolvePatientOptional(
+    const { patient, dbError } = await resolvePatientOptional(
       extractEmail(payload.from),
       thread,
       payload.text,
@@ -77,6 +79,7 @@ export async function processInboundEmail(
       patient?.id ?? null,
       payload.text,
       identityHints,
+      dbError,
       classification.extractedLocationHint,
       classification.extractedEncounterDate
     );
@@ -112,7 +115,9 @@ export async function processInboundEmail(
       payload.text,
       thread.id,
       classification.extractedName,
-      classification.extractedDob
+      classification.extractedDob,
+      classification.extractedFirstName,
+      classification.extractedLastName
     );
 
     const identity = await resolveIdentity(
@@ -192,13 +197,27 @@ async function gatherFactsOpenAccess(
   intent: EmailIntent,
   patientId: string | null,
   body: string,
-  identityHints: { name: string | null; dob: string | null },
+  identityHints: {
+    name: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    dob: string | null;
+  },
+  dbError: string | null,
   locationHint: string | null,
   encounterDateHint: string | null
 ): Promise<ProcessorFacts> {
+  if (dbError?.includes("permission denied")) {
+    return { clinicDataUnavailable: true };
+  }
+
   if (intent === "soap_note") {
     if (!patientId) {
-      if (identityHints.name && identityHints.dob) {
+      const hasIdentity =
+        identityHints.dob &&
+        (identityHints.name ||
+          (identityHints.firstName && identityHints.lastName));
+      if (hasIdentity) {
         return { soapPatientNotFound: true };
       }
       return { needsPatientForSoap: true };
