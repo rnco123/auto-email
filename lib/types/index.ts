@@ -11,6 +11,7 @@ export type EmailIntent =
   | "soap_note"
   | "provide_identity"
   | "provide_dob"
+  | "alternate_email"
   | "greeting"
   | "unknown";
 
@@ -86,6 +87,7 @@ export interface ProcessorFacts {
   soapNote?: SoapNoteRecord;
   needsDob?: boolean;
   needsName?: boolean;
+  alternateEmail?: boolean;
   verificationFailed?: boolean;
   unknownSender?: boolean;
   noSoapOnFile?: boolean;

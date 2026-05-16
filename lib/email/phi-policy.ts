@@ -9,20 +9,33 @@ export function canDiscloseSoap(intent: EmailIntent, identity: IdentityState): b
   return intent === "soap_note" && identity.dobVerified && identity.nameMatched;
 }
 
+function isKnownPatient(identity: IdentityState): boolean {
+  return !!identity.patient && !!identity.verifiedPatientId;
+}
+
 export function buildFactsEnvelope(
   intent: EmailIntent,
   identity: IdentityState,
   facts: ProcessorFacts
 ): ProcessorFacts {
-  if (!identity.emailMatched) {
+  if (identity.needsAlternateVerification) {
+    return {
+      needsDob: !identity.dobVerified,
+      needsName: !identity.nameMatched,
+      alternateEmail: true,
+    };
+  }
+
+  if (!isKnownPatient(identity) && !identity.emailMatched) {
     return { unknownSender: true };
   }
 
-  if (requiresVerification(intent) && !identity.dobVerified) {
+  if (requiresVerification(intent) && !identity.verifiedPatientId) {
     return {
       needsDob: !identity.dobVerified,
       needsName: !identity.nameMatched,
       patientName: identity.patient?.fullName,
+      alternateEmail: identity.verifiedViaAlternateEmail,
     };
   }
 

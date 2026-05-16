@@ -9,6 +9,7 @@ const classificationSchema = z.object({
     "soap_note",
     "provide_identity",
     "provide_dob",
+    "alternate_email",
     "greeting",
     "unknown",
   ]),
@@ -27,6 +28,7 @@ Intents:
 - soap_note: requesting visit notes, SOAP note, medical summary from visit
 - provide_identity: patient gives their name for verification
 - provide_dob: patient gives date of birth
+- alternate_email: patient says they are using a different email than on file
 - greeting: hello with no specific request yet
 - unknown: unclear
 

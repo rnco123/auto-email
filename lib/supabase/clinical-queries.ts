@@ -12,6 +12,35 @@ const a = schemaMap.appointments;
 const l = schemaMap.locations;
 const s = schemaMap.soapNotes;
 
+function mapPatientRow(row: Record<string, unknown>): PatientRecord {
+  return {
+    id: String(row[p.id]),
+    email: String(row[p.email]),
+    fullName: String(row[p.fullName]),
+    dateOfBirth: String(row[p.dob]),
+  };
+}
+
+export async function findPatientById(
+  patientId: string
+): Promise<PatientRecord | null> {
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from(p.table)
+    .select(`${p.id}, ${p.email}, ${p.fullName}, ${p.dob}`)
+    .eq(p.id, patientId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("findPatientById error:", error.message);
+    return null;
+  }
+  if (!data) return null;
+
+  return mapPatientRow(data as Record<string, unknown>);
+}
+
 export async function findPatientByEmail(
   email: string
 ): Promise<PatientRecord | null> {
@@ -31,13 +60,33 @@ export async function findPatientByEmail(
   }
   if (!data) return null;
 
-  const row = data as Record<string, unknown>;
-  return {
-    id: String(row[p.id]),
-    email: String(row[p.email]),
-    fullName: String(row[p.fullName]),
-    dateOfBirth: String(row[p.dob]),
-  };
+  return mapPatientRow(data as Record<string, unknown>);
+}
+
+/** Verify identity when patient emails from an address not on file. */
+export async function findPatientByNameAndDob(
+  name: string,
+  dob: string
+): Promise<PatientRecord | null> {
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from(p.table)
+    .select(`${p.id}, ${p.email}, ${p.fullName}, ${p.dob}`);
+
+  if (error) {
+    console.error("findPatientByNameAndDob error:", error.message);
+    return null;
+  }
+
+  for (const row of data ?? []) {
+    const patient = mapPatientRow(row as Record<string, unknown>);
+    if (dobMatches(patient.dateOfBirth, dob) && namesMatch(patient.fullName, name)) {
+      return patient;
+    }
+  }
+
+  return null;
 }
 
 export function normalizeName(name: string): string {

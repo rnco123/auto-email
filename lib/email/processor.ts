@@ -33,8 +33,14 @@ export async function processInboundEmail(
     thread.status
   );
 
+  const claimsAlternateEmail = classification.intent === "alternate_email";
+
   let intent = classification.intent;
-  if (intent === "provide_dob" || intent === "provide_identity") {
+  if (
+    intent === "provide_dob" ||
+    intent === "provide_identity" ||
+    intent === "alternate_email"
+  ) {
     intent = inferPriorIntent(thread.last_intent) ?? "appointment";
   }
   if (intent === "greeting" && thread.last_intent) {
@@ -45,35 +51,38 @@ export async function processInboundEmail(
     extractEmail(payload.from),
     classification.extractedName,
     classification.extractedDob,
-    thread
+    thread,
+    claimsAlternateEmail
   );
 
   let facts: ProcessorFacts = {};
   let status: ThreadStatus = thread.status;
 
-  if (!identity.emailMatched) {
-    status = "unknown_sender";
-    facts = { unknownSender: true };
-  } else if (requiresVerification(intent) && !identity.dobVerified) {
+  if (identity.needsAlternateVerification) {
     status = "needs_dob";
     facts = {
-      needsDob: true,
+      needsDob: !identity.dobVerified,
       needsName: !identity.nameMatched,
-      patientName: identity.patient?.fullName,
+      alternateEmail: true,
     };
-  } else if (
-    identity.dobVerified &&
-    identity.nameMatched &&
-    identity.patient
-  ) {
+  } else if (!identity.patient) {
+    status = "unknown_sender";
+    facts = { unknownSender: true };
+  } else if (requiresVerification(intent) && !identity.verifiedPatientId) {
+    status = "needs_dob";
+    facts = {
+      needsDob: !identity.dobVerified,
+      needsName: !identity.nameMatched,
+      patientName: identity.patient.fullName,
+      alternateEmail: identity.verifiedViaAlternateEmail,
+    };
+  } else if (identity.verifiedPatientId && identity.patient) {
     status = "verified";
-    const patientId = identity.patient.id;
     facts = await gatherFacts(
       intent,
-      patientId,
+      identity.patient.id,
       classification.extractedLocationHint
     );
-    identity.verifiedPatientId = patientId;
   } else if (intent === "location") {
     facts = await gatherFacts("location", null, classification.extractedLocationHint);
     facts.publicOnly = true;
