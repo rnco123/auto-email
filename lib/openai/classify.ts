@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { getOpenAI, CLASSIFY_MODEL } from "./client";
-import type { ClassificationResult, EmailIntent } from "@/lib/types";
+import type {
+  ClassificationResult,
+  EmailIntent,
+  EmailMessage,
+  EmailThread,
+} from "@/lib/types";
 
 const classificationSchema = z.object({
   intent: z.enum([
@@ -48,12 +53,28 @@ Extract identity from ANY format (prose, "my name is…", or key:value like firs
 - extractedLocationHint: city, zip, neighborhood, or "near me" context for location queries
 - extractedEncounterDate: visit or encounter date if mentioned (for SOAP note requests)`;
 
+function formatHistoryForClassifier(messages: EmailMessage[]): string {
+  return messages
+    .filter((m) => m.body_text?.trim())
+    .sort(
+      (a, b) =>
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    )
+    .map(
+      (m) =>
+        `${m.direction === "inbound" ? "Patient" : "Clinic"}: ${m.body_text?.trim()}`
+    )
+    .join("\n");
+}
+
 export async function classifyPatientEmail(
   subject: string,
   body: string,
-  threadStatus: string
+  thread: EmailThread,
+  conversationHistory: EmailMessage[] = []
 ): Promise<ClassificationResult> {
   const client = getOpenAI();
+  const historyText = formatHistoryForClassifier(conversationHistory);
 
   const response = await client.chat.completions.create({
     model: CLASSIFY_MODEL,
@@ -63,7 +84,13 @@ export async function classifyPatientEmail(
       { role: "system", content: SYSTEM },
       {
         role: "user",
-        content: `Thread status: ${threadStatus}\nSubject: ${subject}\n\nBody:\n${body}`,
+        content: [
+          `Thread status: ${thread.status}`,
+          `Last intent: ${thread.last_intent ?? "none"}`,
+          `Subject: ${subject}`,
+          historyText ? `\nConversation so far:\n${historyText}` : "",
+          `\nLatest patient message:\n${body}`,
+        ].join("\n"),
       },
     ],
   });

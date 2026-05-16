@@ -30,6 +30,7 @@ import { collectIdentityHints } from "./extract-identity";
 import { resolvePatientOptional } from "./resolve-patient";
 import type {
   EmailIntent,
+  EmailMessage,
   EmailThread,
   InboundEmailPayload,
   ProcessorFacts,
@@ -40,10 +41,12 @@ export async function processInboundEmail(
   payload: InboundEmailPayload,
   thread: EmailThread
 ): Promise<void> {
+  const history = await getThreadMessages(thread.id);
   const classification = await classifyPatientEmail(
     payload.subject,
     payload.text,
-    thread.status
+    thread,
+    history
   );
 
   let intent = classification.intent;
@@ -89,7 +92,8 @@ export async function processInboundEmail(
       intent,
       facts,
       "active",
-      patient?.id ?? thread.verified_patient_id
+      patient?.id ?? thread.verified_patient_id,
+      history
     );
     return;
   }
@@ -166,7 +170,8 @@ export async function processInboundEmail(
       intent,
       facts,
       status,
-      identity.verifiedPatientId ?? thread.verified_patient_id
+      identity.verifiedPatientId ?? thread.verified_patient_id,
+      history
     );
     return;
   }
@@ -189,7 +194,8 @@ export async function processInboundEmail(
     intent,
     facts,
     status,
-    thread.verified_patient_id
+    thread.verified_patient_id,
+    history
   );
 }
 
@@ -303,10 +309,16 @@ async function sendReplyAndUpdateThread(
   intent: EmailIntent,
   facts: ProcessorFacts,
   status: ThreadStatus,
-  verifiedPatientId: string | null
+  verifiedPatientId: string | null,
+  history: EmailMessage[]
 ): Promise<void> {
-  const history = await getThreadMessages(thread.id);
-  const replyText = await generateReply(intent, payload.text, facts, history);
+  const replyText = await generateReply(
+    intent,
+    payload.text,
+    facts,
+    history,
+    thread
+  );
 
   const replySubject = payload.subject.replace(/^(re:\s*)+/i, "");
   const lastInbound = await getLastInboundMessageId(thread.id, payload);
