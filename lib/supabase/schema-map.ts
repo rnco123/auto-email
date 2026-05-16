@@ -7,7 +7,8 @@ export const schemaMap = {
     table: "patients",
     id: "id",
     email: "email",
-    fullName: "full_name",
+    firstName: "first_name",
+    lastName: "last_name",
     dob: "date_of_birth",
   },
   appointments: {

@@ -16,12 +16,20 @@ const e = schemaMap.encounters;
 const n = schemaMap.aiSoapNotes;
 
 function mapPatientRow(row: Record<string, unknown>): PatientRecord {
+  const first = row[p.firstName] ? String(row[p.firstName]).trim() : "";
+  const last = row[p.lastName] ? String(row[p.lastName]).trim() : "";
+  const fullName = [first, last].filter(Boolean).join(" ");
+
   return {
     id: String(row[p.id]),
-    email: String(row[p.email]),
-    fullName: String(row[p.fullName]),
+    email: row[p.email] ? String(row[p.email]) : "",
+    fullName,
     dateOfBirth: String(row[p.dob]),
   };
+}
+
+function asPatientRow(data: unknown): Record<string, unknown> {
+  return data as Record<string, unknown>;
 }
 
 export async function findPatientById(
@@ -31,7 +39,7 @@ export async function findPatientById(
 
   const { data, error } = await supabase
     .from(p.table)
-    .select(`${p.id}, ${p.email}, ${p.fullName}, ${p.dob}`)
+    .select(`${p.id}, ${p.email}, ${p.firstName}, ${p.lastName}, ${p.dob}`)
     .eq(p.id, patientId)
     .maybeSingle();
 
@@ -41,7 +49,7 @@ export async function findPatientById(
   }
   if (!data) return null;
 
-  return mapPatientRow(data as Record<string, unknown>);
+  return mapPatientRow(asPatientRow(data));
 }
 
 export async function findPatientByEmail(
@@ -52,7 +60,7 @@ export async function findPatientByEmail(
 
   const { data, error } = await supabase
     .from(p.table)
-    .select(`${p.id}, ${p.email}, ${p.fullName}, ${p.dob}`)
+    .select(`${p.id}, ${p.email}, ${p.firstName}, ${p.lastName}, ${p.dob}`)
     .ilike(p.email, normalized)
     .limit(1)
     .maybeSingle();
@@ -63,7 +71,7 @@ export async function findPatientByEmail(
   }
   if (!data) return null;
 
-  return mapPatientRow(data as Record<string, unknown>);
+  return mapPatientRow(asPatientRow(data));
 }
 
 /** Verify identity when patient emails from an address not on file. */
@@ -75,7 +83,7 @@ export async function findPatientByNameAndDob(
 
   const { data, error } = await supabase
     .from(p.table)
-    .select(`${p.id}, ${p.email}, ${p.fullName}, ${p.dob}`);
+    .select(`${p.id}, ${p.email}, ${p.firstName}, ${p.lastName}, ${p.dob}`);
 
   if (error) {
     console.error("findPatientByNameAndDob error:", error.message);
