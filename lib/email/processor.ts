@@ -188,6 +188,20 @@ async function gatherFactsOpenAccess(
   locationHint: string | null,
   encounterDateHint: string | null
 ): Promise<ProcessorFacts> {
+  if (intent === "soap_note") {
+    if (!patientId) {
+      return { needsPatientForSoap: true };
+    }
+    return gatherSoapNoteFacts(patientId, encounterDateHint);
+  }
+
+  if (intent === "appointment") {
+    if (!patientId) {
+      return { needsPatientInfo: "appointment" };
+    }
+    return gatherPatientFacts(intent, patientId, locationHint, encounterDateHint);
+  }
+
   const publicIntent =
     isPublicReadonlyIntent(intent) ||
     intent === "unknown" ||
@@ -202,19 +216,7 @@ async function gatherFactsOpenAccess(
     return { ...facts, publicOnly: true };
   }
 
-  const pub = await gatherPublicFacts("general_info", body, locationHint);
-
-  if (!patientId) {
-    return { ...pub, publicOnly: true };
-  }
-
-  const clinical = await gatherPatientFacts(
-    intent,
-    patientId,
-    locationHint,
-    encounterDateHint
-  );
-  return { ...pub, ...clinical, publicOnly: false };
+  return gatherPublicFacts("general_info", body, locationHint);
 }
 
 async function gatherPublicFacts(

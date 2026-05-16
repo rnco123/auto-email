@@ -117,6 +117,8 @@ export interface ProcessorFacts {
   verificationFailed?: boolean;
   unknownSender?: boolean;
   noSoapOnFile?: boolean;
+  needsPatientForSoap?: boolean;
+  needsPatientInfo?: "soap" | "appointment";
   publicOnly?: boolean;
 }
 

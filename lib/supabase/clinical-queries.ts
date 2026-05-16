@@ -354,17 +354,17 @@ export function matchSoapNoteByEncounterDate(
   notes: SoapNoteRecord[],
   dateHint: string
 ): SoapNoteRecord | null {
-  const target = parseDob(dateHint);
+  const target = parseDobParts(dateHint);
   if (!target) return null;
 
   const matches = notes.filter((note) => {
     if (!note.encounterDate) return false;
-    const d = parseDob(note.encounterDate);
+    const d = parseDobParts(note.encounterDate);
     if (!d) return false;
     return (
-      d.getUTCFullYear() === target.getUTCFullYear() &&
-      d.getUTCMonth() === target.getUTCMonth() &&
-      d.getUTCDate() === target.getUTCDate()
+      d.year === target.year &&
+      d.month === target.month &&
+      d.day === target.day
     );
   });
 

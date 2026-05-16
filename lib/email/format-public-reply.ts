@@ -1,4 +1,97 @@
-import type { LocationRecord, PublicReplyScope, ServiceRecord } from "@/lib/types";
+import type {
+  EncounterOption,
+  LocationRecord,
+  ProcessorFacts,
+  PublicReplyScope,
+  ServiceRecord,
+} from "@/lib/types";
+
+function formatVisitDate(iso: string | null): string {
+  if (!iso) return "Unknown date";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: process.env.APP_TIMEZONE ?? "America/New_York",
+  });
+}
+
+function formatEncounterDateList(options: EncounterOption[]): string {
+  return options
+    .map((o) => `• ${formatVisitDate(o.encounterDate)}`)
+    .join("\n");
+}
+
+/** Deterministic SOAP replies — never mix in services or locations. */
+export function formatSoapReply(facts: ProcessorFacts): string | null {
+  if (facts.soapNotePdfAttached && facts.soapNote) {
+    const when = facts.soapNote.encounterDate
+      ? `from your visit on ${formatVisitDate(facts.soapNote.encounterDate)}`
+      : "from your visit";
+    return [
+      `Please find your SOAP note ${when} attached as a PDF.`,
+      "",
+      "Thank you,",
+    ].join("\n");
+  }
+
+  if (facts.needsPatientForSoap || facts.needsPatientInfo === "soap") {
+    return [
+      "To send your SOAP note as a PDF, please reply with:",
+      "",
+      "• Your full name and date of birth exactly as they appear on file, or",
+      "• The date of your visit (if you have had more than one visit).",
+      "",
+      "Thank you,",
+    ].join("\n");
+  }
+
+  if (facts.needsPatientInfo === "appointment") {
+    return [
+      "To look up your appointment, please reply with your full name and date of birth exactly as they appear on file.",
+      "",
+      "Thank you,",
+    ].join("\n");
+  }
+
+  if (facts.needsEncounterDate && facts.encounterOptions?.length) {
+    const dates = formatEncounterDateList(facts.encounterOptions);
+    if (facts.encounterDateNotFound) {
+      return [
+        "We could not find a SOAP note for that visit date.",
+        "",
+        "Please reply with one of these visit dates:",
+        "",
+        dates,
+        "",
+        "Thank you,",
+      ].join("\n");
+    }
+    return [
+      "We have SOAP notes for more than one visit.",
+      "",
+      "Please reply with the visit date you need:",
+      "",
+      dates,
+      "",
+      "Thank you,",
+    ].join("\n");
+  }
+
+  if (facts.noSoapOnFile) {
+    return [
+      "We do not have a SOAP note on file for your chart.",
+      "",
+      "Please call the clinic if you need assistance.",
+      "",
+      "Thank you,",
+    ].join("\n");
+  }
+
+  return null;
+}
 
 function formatLocationLine(loc: LocationRecord): string {
   const parts = [loc.title];

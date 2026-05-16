@@ -1,4 +1,7 @@
-import { formatScopedPublicReply } from "@/lib/email/format-public-reply";
+import {
+  formatScopedPublicReply,
+  formatSoapReply,
+} from "@/lib/email/format-public-reply";
 import { getOpenAI, REPLY_MODEL } from "./client";
 import type { EmailIntent, EmailMessage, ProcessorFacts } from "@/lib/types";
 
@@ -25,6 +28,9 @@ export async function generateReply(
   facts: ProcessorFacts,
   conversationHistory: EmailMessage[] = []
 ): Promise<string> {
+  const soapReply = formatSoapReply(facts);
+  if (soapReply) return soapReply;
+
   if (facts.publicOnly && facts.replyScope) {
     const formatted = formatScopedPublicReply(
       facts.replyScope,
