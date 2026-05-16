@@ -39,6 +39,11 @@ export interface EmailMessage {
   created_at: string;
 }
 
+export interface EmailMessageWithThread extends EmailMessage {
+  patient_email: string;
+  thread_subject: string | null;
+}
+
 export interface PatientRecord {
   id: string;
   email: string;

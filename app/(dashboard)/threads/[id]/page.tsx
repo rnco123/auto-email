@@ -4,6 +4,7 @@ import {
   getThread,
   getThreadMessages,
 } from "@/lib/supabase/email-store";
+import { RefreshButton } from "../../refresh-button";
 
 export const dynamic = "force-dynamic";
 
@@ -54,7 +55,10 @@ export default async function ThreadDetailPage({
       <Link href="/" className="back-link">
         ← All threads
       </Link>
-      <h2 style={{ marginTop: 0 }}>{thread.patient_email}</h2>
+      <div className="page-title-row">
+        <h2 style={{ marginTop: 0 }}>{thread.patient_email}</h2>
+        <RefreshButton />
+      </div>
       <p className="muted">
         {thread.subject ?? "(no subject)"} ·{" "}
         <span className={`badge ${thread.status}`}>{thread.status}</span>

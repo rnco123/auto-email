@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listThreads } from "@/lib/supabase/email-store";
+import { listRecentMessages, listThreads } from "@/lib/supabase/email-store";
 import { checkSupabaseConnection } from "@/lib/supabase/health";
 import { seedSampleLogsIfEmpty } from "@/lib/supabase/seed-sample";
 import { RefreshButton } from "./refresh-button";
@@ -21,8 +21,15 @@ function formatLogTime(iso: string) {
   });
 }
 
+function previewText(text: string | null, max = 120): string {
+  if (!text) return "—";
+  const oneLine = text.replace(/\s+/g, " ").trim();
+  return oneLine.length > max ? `${oneLine.slice(0, max)}…` : oneLine;
+}
+
 export default async function ThreadsPage() {
   let threads: Awaited<ReturnType<typeof listThreads>> = [];
+  let messages: Awaited<ReturnType<typeof listRecentMessages>> = [];
   let error: string | null = null;
   let seedNote: string | null = null;
 
@@ -40,7 +47,10 @@ export default async function ThreadsPage() {
 
   if (health.connected) {
     try {
-      threads = await listThreads();
+      [threads, messages] = await Promise.all([
+        listThreads(),
+        listRecentMessages(),
+      ]);
     } catch (e) {
       error = e instanceof Error ? e.message : "Failed to load threads";
     }
@@ -114,32 +124,83 @@ export default async function ThreadsPage() {
       )}
 
       {threads.length > 0 && (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Patient email</th>
-              <th>Subject</th>
-              <th>Status</th>
-              <th>Last intent</th>
-              <th>Updated</th>
-            </tr>
-          </thead>
-          <tbody>
-            {threads.map((t) => (
-              <tr key={t.id}>
-                <td>
-                  <Link href={`/threads/${t.id}`}>{t.patient_email}</Link>
-                </td>
-                <td>{t.subject ?? "—"}</td>
-                <td>
-                  <span className={`badge ${t.status}`}>{t.status}</span>
-                </td>
-                <td>{t.last_intent ?? "—"}</td>
-                <td>{formatDate(t.updated_at)}</td>
+        <>
+          <h3 className="section-heading">Threads</h3>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Patient email</th>
+                <th>Subject</th>
+                <th>Status</th>
+                <th>Last intent</th>
+                <th>Updated</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {threads.map((t) => (
+                <tr key={t.id}>
+                  <td>
+                    <Link href={`/threads/${t.id}`}>{t.patient_email}</Link>
+                  </td>
+                  <td>{t.subject ?? "—"}</td>
+                  <td>
+                    <span className={`badge ${t.status}`}>{t.status}</span>
+                  </td>
+                  <td>{t.last_intent ?? "—"}</td>
+                  <td>{formatDate(t.updated_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {!error && (
+        <>
+          <h3 className="section-heading">Email messages</h3>
+          <p className="muted section-desc">
+            All inbound and outbound messages from <code>email_messages</code>{" "}
+            in Supabase.
+          </p>
+          {messages.length === 0 ? (
+            <p className="muted">No messages yet.</p>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Direction</th>
+                  <th>Patient</th>
+                  <th>Subject</th>
+                  <th>Message</th>
+                  <th>Sent</th>
+                </tr>
+              </thead>
+              <tbody>
+                {messages.map((m) => (
+                  <tr key={m.id}>
+                    <td>
+                      <span className={`badge ${m.direction}`}>
+                        {m.direction}
+                      </span>
+                    </td>
+                    <td>
+                      <Link href={`/threads/${m.thread_id}`}>
+                        {m.patient_email}
+                      </Link>
+                    </td>
+                    <td>{m.thread_subject ?? "—"}</td>
+                    <td className="message-preview">
+                      <Link href={`/threads/${m.thread_id}`}>
+                        {previewText(m.body_text)}
+                      </Link>
+                    </td>
+                    <td>{formatDate(m.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
       )}
     </>
   );

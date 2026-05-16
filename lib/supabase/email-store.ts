@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from "./client";
 import type {
   EmailIntent,
   EmailMessage,
+  EmailMessageWithThread,
   EmailThread,
   InboundEmailPayload,
   ThreadStatus,
@@ -192,6 +193,42 @@ export async function getThreadMessages(
     .order("created_at", { ascending: true });
   if (error) throw error;
   return (data ?? []) as EmailMessage[];
+}
+
+export async function listRecentMessages(
+  limit = 50
+): Promise<EmailMessageWithThread[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("email_messages")
+    .select(
+      "id, thread_id, direction, resend_email_id, body_text, raw_metadata, created_at, email_threads(patient_email, subject)"
+    )
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+
+  return (data ?? []).map((row) => {
+    const r = row as Record<string, unknown>;
+    const thread = r.email_threads as
+      | { patient_email: string; subject: string | null }
+      | { patient_email: string; subject: string | null }[]
+      | null;
+    const threadRow = Array.isArray(thread) ? thread[0] : thread;
+
+    return {
+      id: String(r.id),
+      thread_id: String(r.thread_id),
+      direction: r.direction as EmailMessageWithThread["direction"],
+      resend_email_id: r.resend_email_id ? String(r.resend_email_id) : null,
+      body_text: r.body_text ? String(r.body_text) : null,
+      raw_metadata: (r.raw_metadata as Record<string, unknown>) ?? null,
+      created_at: String(r.created_at),
+      patient_email: threadRow?.patient_email ?? "—",
+      thread_subject: threadRow?.subject ?? null,
+    };
+  });
 }
 
 export async function enqueueJob(threadId: string): Promise<string> {

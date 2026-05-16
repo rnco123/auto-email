@@ -104,6 +104,38 @@ table.data-table tr:hover td {
   background: #7f1d1d;
 }
 
+.badge.inbound {
+  background: #1e3a5f;
+}
+
+.badge.outbound {
+  background: #166534;
+}
+
+.section-heading {
+  margin: 2rem 0 0.75rem;
+  font-size: 1.125rem;
+}
+
+.section-desc {
+  margin: 0 0 1rem;
+  font-size: 0.875rem;
+}
+
+.message-preview {
+  max-width: 28rem;
+  font-size: 0.8125rem;
+}
+
+.message-preview a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.message-preview a:hover {
+  text-decoration: underline;
+}
+
 .messages {
   display: flex;
   flex-direction: column;
