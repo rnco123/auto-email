@@ -97,9 +97,12 @@ export interface ClassificationResult {
   confidence: number;
 }
 
+export type PublicReplyScope = "services" | "locations" | "both" | "none";
+
 export interface ProcessorFacts {
   patientName?: string;
   appointment?: AppointmentRecord;
+  replyScope?: PublicReplyScope;
   locations?: LocationRecord[];
   nearestLocation?: LocationRecord;
   services?: ServiceRecord[];

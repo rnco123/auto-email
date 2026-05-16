@@ -25,6 +25,7 @@ import {
   isVerificationDisabled,
 } from "./phi-policy";
 import { resolveIntent } from "./public-intent";
+import { detectPublicReplyScope } from "./public-scope";
 import { resolvePatientOptional } from "./resolve-patient";
 import type {
   EmailIntent,
@@ -67,6 +68,7 @@ export async function processInboundEmail(
     const facts = await gatherFactsOpenAccess(
       intent,
       patient?.id ?? null,
+      payload.text,
       classification.extractedLocationHint,
       classification.extractedEncounterDate
     );
@@ -91,7 +93,11 @@ export async function processInboundEmail(
   let status: ThreadStatus = thread.status;
 
   if (isPublicReadonlyIntent(intent)) {
-    facts = await gatherPublicFacts(intent, classification.extractedLocationHint);
+    facts = await gatherPublicFacts(
+      intent,
+      payload.text,
+      classification.extractedLocationHint
+    );
     facts.publicOnly = true;
     status = "active";
   } else {
@@ -178,6 +184,7 @@ export async function processInboundEmail(
 async function gatherFactsOpenAccess(
   intent: EmailIntent,
   patientId: string | null,
+  body: string,
   locationHint: string | null,
   encounterDateHint: string | null
 ): Promise<ProcessorFacts> {
@@ -191,11 +198,11 @@ async function gatherFactsOpenAccess(
       : null;
 
   if (publicIntent) {
-    const facts = await gatherPublicFacts(publicIntent, locationHint);
+    const facts = await gatherPublicFacts(publicIntent, body, locationHint);
     return { ...facts, publicOnly: true };
   }
 
-  const pub = await gatherPublicFacts("general_info", locationHint);
+  const pub = await gatherPublicFacts("general_info", body, locationHint);
 
   if (!patientId) {
     return { ...pub, publicOnly: true };
@@ -212,19 +219,32 @@ async function gatherFactsOpenAccess(
 
 async function gatherPublicFacts(
   intent: EmailIntent,
+  body: string,
   locationHint: string | null
 ): Promise<ProcessorFacts> {
-  const locations = await listLocations();
-  const nearest = locationHint
-    ? findNearestLocation(locations, locationHint) ?? undefined
-    : locations[0] ?? undefined;
+  const scope = detectPublicReplyScope(body, intent);
+  const facts: ProcessorFacts = { replyScope: scope, publicOnly: true };
 
-  if (intent === "location") {
-    return { locations, nearestLocation: nearest, publicOnly: true };
+  if (scope === "none") {
+    return facts;
   }
 
-  const services = await listServices();
-  return { locations, nearestLocation: nearest, services, publicOnly: true };
+  if (scope === "services" || scope === "both") {
+    facts.services = await listServices();
+  }
+
+  if (scope === "locations" || scope === "both") {
+    const all = await listLocations();
+    if (scope === "locations" && locationHint) {
+      const nearest = findNearestLocation(all, locationHint);
+      facts.locations = nearest ? [nearest] : all;
+      facts.nearestLocation = nearest ?? undefined;
+    } else {
+      facts.locations = all;
+    }
+  }
+
+  return facts;
 }
 
 async function gatherPatientFacts(
