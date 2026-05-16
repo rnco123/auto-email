@@ -5,7 +5,7 @@ const SERVICE_PATTERNS =
   /\b(services?|what\s+services|what do you (offer|provide|treat)|treatments?|specialt(y|ies)|conditions? (you )?treat|medical services)\b/i;
 
 const LOCATION_PATTERNS =
-  /\b(address|location|where are you|directions|office hours|opening hours|hours of operation|which clinic|nearest clinic|find (a |the )?clinic)\b/i;
+  /\b(address|address(es)?|location|locations|where (are you|is the clinic|can i find)|directions|office hours|opening hours|hours of operation|which clinic|nearest clinic|find (a |the )?clinic|clinic (location|address|near))\b/i;
 
 const SOAP_NOTE_PATTERNS =
   /\b(soap\s*notes?|visit\s+notes?|clinical\s+notes?|medical\s+summar(y|ies))\b/i;
@@ -53,10 +53,11 @@ export function resolveIntent(
   verificationDisabled = false
 ): EmailIntent {
   if (detectSoapNoteFromText(body)) return "soap_note";
-  if (isSoapThreadFollowUp(classified, body, lastIntent)) return "soap_note";
 
   const fromText = detectPublicIntentFromText(body);
   if (fromText) return fromText;
+
+  if (isSoapThreadFollowUp(classified, body, lastIntent)) return "soap_note";
 
   if (verificationDisabled) {
     if (

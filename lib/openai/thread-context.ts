@@ -94,6 +94,8 @@ Rules:
 - If clinicData.needsPatientForSoap or needsPatientInfo, ask naturally for name/DOB or visit date.
 - If clinicData.soapPatientNotFound, say you could not find their chart with that info — suggest checking spelling.
 - For services or locations, use bullet lists (one per line) when listing multiple items.
+- If clinicData.replyScope is "locations" or "both" and clinicData.locations has items, list them from that array only.
+- If replyScope asks for locations but clinicData.locations is missing or empty, say location info is temporarily unavailable — do not invent zip-code lookups or promise to send details later.
 - Do not mention AI, automation, or internal systems.
 - Plain text only. Short paragraphs. End with "Thank you," on its own line.`;
 }

@@ -4,7 +4,7 @@ const SERVICE_PATTERNS =
   /\b(services?|what\s+services|what do you (offer|provide|treat)|treatments?|specialt(y|ies)|conditions? (you )?treat|medical services)\b/i;
 
 const LOCATION_PATTERNS =
-  /\b(address|address(es)?|location|locations|where are you|directions|office hours|opening hours|which clinic|nearest clinic|find (a |the )?clinic)\b/i;
+  /\b(address|address(es)?|location|locations|where (are you|is the clinic|can i find)|directions|office hours|opening hours|which clinic|nearest clinic|find (a |the )?clinic|clinic (location|address|near))\b/i;
 
 /** What public data to include — only what the patient asked for. */
 export function detectPublicReplyScope(body: string, intent: EmailIntent): PublicReplyScope {

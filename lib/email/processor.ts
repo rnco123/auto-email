@@ -213,7 +213,10 @@ async function gatherFactsOpenAccess(
   locationHint: string | null,
   encounterDateHint: string | null
 ): Promise<ProcessorFacts> {
-  if (dbError?.includes("permission denied")) {
+  if (
+    dbError?.includes("permission denied") &&
+    (intent === "soap_note" || intent === "appointment")
+  ) {
     return { clinicDataUnavailable: true };
   }
 
