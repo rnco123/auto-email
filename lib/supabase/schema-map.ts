@@ -30,12 +30,22 @@ export const schemaMap = {
     titleEn: "title_en",
     titleEs: "title_es",
   },
-  soapNotes: {
-    table: "soap_notes",
+  encounters: {
+    table: "encounters",
     id: "id",
     patientId: "patient_id",
-    content: "summary",
-    visitDate: "visit_date",
+    /** Column used when asking patient to pick a visit date */
+    encounterDate: "encounter_date",
+  },
+  aiSoapNotes: {
+    table: "ai_soapnotes",
+    id: "id",
+    encounterId: "encounter_id",
+    subjective: "subjective_text",
+    objective: "objective_text",
+    assessment: "assessment_text",
+    plan: "plan_text",
+    createdAt: "created_at",
   },
 } as const;
 

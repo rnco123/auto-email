@@ -12,6 +12,7 @@ export type EmailIntent =
   | "soap_note"
   | "provide_identity"
   | "provide_dob"
+  | "provide_encounter_date"
   | "alternate_email"
   | "greeting"
   | "unknown";
@@ -74,8 +75,17 @@ export interface ServiceRecord {
 
 export interface SoapNoteRecord {
   id: string;
-  visitDate: string | null;
-  summary: string;
+  encounterId: string | null;
+  encounterDate: string | null;
+  subjective: string | null;
+  objective: string | null;
+  assessment: string | null;
+  plan: string | null;
+}
+
+export interface EncounterOption {
+  encounterId: string;
+  encounterDate: string | null;
 }
 
 export interface ClassificationResult {
@@ -83,6 +93,7 @@ export interface ClassificationResult {
   extractedName: string | null;
   extractedDob: string | null;
   extractedLocationHint: string | null;
+  extractedEncounterDate: string | null;
   confidence: number;
 }
 
@@ -93,6 +104,10 @@ export interface ProcessorFacts {
   nearestLocation?: LocationRecord;
   services?: ServiceRecord[];
   soapNote?: SoapNoteRecord;
+  soapNotePdfAttached?: boolean;
+  needsEncounterDate?: boolean;
+  encounterOptions?: EncounterOption[];
+  encounterDateNotFound?: boolean;
   needsDob?: boolean;
   needsName?: boolean;
   alternateEmail?: boolean;

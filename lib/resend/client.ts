@@ -54,12 +54,18 @@ export async function fetchReceivedEmail(
   };
 }
 
+export interface EmailAttachment {
+  filename: string;
+  content: Buffer;
+}
+
 export async function sendReply(params: {
   to: string;
   subject: string;
   text: string;
   inReplyTo?: string;
   references?: string;
+  attachments?: EmailAttachment[];
 }): Promise<{ id: string }> {
   const from = process.env.RESEND_FROM_EMAIL;
   if (!from) throw new Error("RESEND_FROM_EMAIL is required");
@@ -76,6 +82,10 @@ export async function sendReply(params: {
       : `Re: ${params.subject}`,
     text: params.text,
     headers: Object.keys(headers).length ? headers : undefined,
+    attachments: params.attachments?.map((a) => ({
+      filename: a.filename,
+      content: a.content,
+    })),
   });
 
   if (error) throw new Error(error.message);
