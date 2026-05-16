@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LogoutButton } from "./logout-button";
 
 export default function DashboardLayout({
   children,
@@ -11,9 +12,12 @@ export default function DashboardLayout({
         <h1>
           <Link href="/">Patient Email Automation</Link>
         </h1>
-        <span className="muted" style={{ fontSize: "0.875rem" }}>
-          Read-only logs
-        </span>
+        <div className="app-header-actions">
+          <span className="muted" style={{ fontSize: "0.875rem" }}>
+            Read-only logs
+          </span>
+          <LogoutButton />
+        </div>
       </header>
       <main className="container">{children}</main>
     </>
