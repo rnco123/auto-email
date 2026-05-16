@@ -54,12 +54,6 @@ export async function processInboundEmail(
   if (!identity.emailMatched) {
     status = "unknown_sender";
     facts = { unknownSender: true };
-    await updateThread(thread.id, {
-      status,
-      last_intent: intent,
-      message_id_root: thread.message_id_root ?? payload.messageId ?? null,
-    });
-    return;
   } else if (requiresVerification(intent) && !identity.dobVerified) {
     status = "needs_dob";
     facts = {
@@ -87,7 +81,8 @@ export async function processInboundEmail(
 
   facts = buildFactsEnvelope(intent, identity, facts);
 
-  const replyText = await generateReply(intent, payload.text, facts);
+  const history = await getThreadMessages(thread.id);
+  const replyText = await generateReply(intent, payload.text, facts, history);
 
   const replySubject = payload.subject.replace(/^(re:\s*)+/i, "");
   const lastInbound = await getLastInboundMessageId(thread.id, payload);
