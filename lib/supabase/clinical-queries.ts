@@ -12,7 +12,8 @@ const p = schemaMap.patients;
 const a = schemaMap.appointments;
 const l = schemaMap.locations;
 const svc = schemaMap.services;
-const s = schemaMap.soapNotes;
+const e = schemaMap.encounters;
+const n = schemaMap.aiSoapNotes;
 
 function mapPatientRow(row: Record<string, unknown>): PatientRecord {
   return {
@@ -117,33 +118,51 @@ export function namesMatch(patientName: string, providedName: string): boolean {
   return aFirst === bFirst && aLast === bLast;
 }
 
-export function parseDob(input: string): Date | null {
+export interface DateParts {
+  year: number;
+  month: number;
+  day: number;
+}
+
+/** Parse a date string into calendar parts (timezone-safe for DOB matching). */
+export function parseDobParts(input: string): DateParts | null {
   const trimmed = input.trim();
-  const iso = /^\d{4}-\d{2}-\d{2}/.exec(trimmed);
+
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
   if (iso) {
-    const d = new Date(trimmed);
-    return isNaN(d.getTime()) ? null : d;
+    return { year: Number(iso[1]), month: Number(iso[2]), day: Number(iso[3]) };
   }
 
   const us = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/.exec(trimmed);
   if (us) {
     const [, month, day, year] = us;
-    const d = new Date(Number(year), Number(month) - 1, Number(day));
-    return isNaN(d.getTime()) ? null : d;
+    return { year: Number(year), month: Number(month), day: Number(day) };
   }
 
   const parsed = new Date(trimmed);
-  return isNaN(parsed.getTime()) ? null : parsed;
+  if (isNaN(parsed.getTime())) return null;
+  return {
+    year: parsed.getFullYear(),
+    month: parsed.getMonth() + 1,
+    day: parsed.getDate(),
+  };
+}
+
+export function parseDob(input: string): Date | null {
+  const parts = parseDobParts(input);
+  if (!parts) return null;
+  const d = new Date(parts.year, parts.month - 1, parts.day);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 export function dobMatches(patientDob: string, provided: string): boolean {
-  const expected = parseDob(patientDob);
-  const actual = parseDob(provided);
+  const expected = parseDobParts(patientDob);
+  const actual = parseDobParts(provided);
   if (!expected || !actual) return false;
   return (
-    expected.getUTCFullYear() === actual.getUTCFullYear() &&
-    expected.getUTCMonth() === actual.getUTCMonth() &&
-    expected.getUTCDate() === actual.getUTCDate()
+    expected.year === actual.year &&
+    expected.month === actual.month &&
+    expected.day === actual.day
   );
 }
 
@@ -263,29 +282,111 @@ export function findNearestLocation(
   return locations[0];
 }
 
-export async function getLatestSoapNote(
+function mapSoapNoteRow(
+  row: Record<string, unknown>,
+  encounterDate: string | null
+): SoapNoteRecord {
+  return {
+    id: String(row[n.id]),
+    encounterId: row[n.encounterId] != null ? String(row[n.encounterId]) : null,
+    encounterDate,
+    subjective: row[n.subjective] ? String(row[n.subjective]) : null,
+    objective: row[n.objective] ? String(row[n.objective]) : null,
+    assessment: row[n.assessment] ? String(row[n.assessment]) : null,
+    plan: row[n.plan] ? String(row[n.plan]) : null,
+  };
+}
+
+export async function listPatientSoapNotes(
   patientId: string
-): Promise<SoapNoteRecord | null> {
+): Promise<SoapNoteRecord[]> {
   const supabase = getSupabaseAdmin();
 
-  const { data, error } = await supabase
-    .from(s.table)
-    .select(`${s.id}, ${s.content}, ${s.visitDate}`)
-    .eq(s.patientId, patientId)
-    .order(s.visitDate, { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: encounters, error: encError } = await supabase
+    .from(e.table)
+    .select(`${e.id}, ${e.encounterDate}`)
+    .eq(e.patientId, patientId)
+    .order(e.encounterDate, { ascending: false });
 
-  if (error) {
-    console.error("getLatestSoapNote error:", error.message);
-    return null;
+  if (encError) {
+    console.error("listPatientSoapNotes encounters error:", encError.message);
+    return [];
   }
-  if (!data) return null;
+  if (!encounters?.length) return [];
 
-  const row = data as Record<string, unknown>;
-  return {
-    id: String(row[s.id]),
-    visitDate: row[s.visitDate] ? String(row[s.visitDate]) : null,
-    summary: String(row[s.content]),
-  };
+  const dateByEncounterId = new Map<string, string | null>();
+  for (const enc of encounters) {
+    const row = enc as Record<string, unknown>;
+    dateByEncounterId.set(
+      String(row[e.id]),
+      row[e.encounterDate] ? String(row[e.encounterDate]) : null
+    );
+  }
+
+  const encounterIds = encounters.map((enc) => (enc as Record<string, unknown>)[e.id]);
+
+  const { data: notes, error: noteError } = await supabase
+    .from(n.table)
+    .select(
+      `${n.id}, ${n.encounterId}, ${n.subjective}, ${n.objective}, ${n.assessment}, ${n.plan}`
+    )
+    .in(n.encounterId, encounterIds);
+
+  if (noteError) {
+    console.error("listPatientSoapNotes notes error:", noteError.message);
+    return [];
+  }
+
+  const mapped = (notes ?? []).map((row) => {
+    const r = row as Record<string, unknown>;
+    const encId = r[n.encounterId] != null ? String(r[n.encounterId]) : null;
+    return mapSoapNoteRow(r, encId ? dateByEncounterId.get(encId) ?? null : null);
+  });
+
+  return mapped.sort((a, b) => {
+    const ta = a.encounterDate ? Date.parse(a.encounterDate) : 0;
+    const tb = b.encounterDate ? Date.parse(b.encounterDate) : 0;
+    return tb - ta;
+  });
+}
+
+export function matchSoapNoteByEncounterDate(
+  notes: SoapNoteRecord[],
+  dateHint: string
+): SoapNoteRecord | null {
+  const target = parseDob(dateHint);
+  if (!target) return null;
+
+  const matches = notes.filter((note) => {
+    if (!note.encounterDate) return false;
+    const d = parseDob(note.encounterDate);
+    if (!d) return false;
+    return (
+      d.getUTCFullYear() === target.getUTCFullYear() &&
+      d.getUTCMonth() === target.getUTCMonth() &&
+      d.getUTCDate() === target.getUTCDate()
+    );
+  });
+
+  return matches[0] ?? null;
+}
+
+export function toEncounterOptions(notes: SoapNoteRecord[]) {
+  const seen = new Set<string>();
+  const options: { encounterId: string; encounterDate: string | null }[] = [];
+
+  for (const note of notes) {
+    if (!note.encounterId || seen.has(note.encounterId)) continue;
+    seen.add(note.encounterId);
+    options.push({
+      encounterId: note.encounterId,
+      encounterDate: note.encounterDate,
+    });
+  }
+
+  return options.sort((a, b) => {
+    const ta = a.encounterDate ? Date.parse(a.encounterDate) : 0;
+    const tb = b.encounterDate ? Date.parse(b.encounterDate) : 0;
+    return tb - ta;
+  });
 }

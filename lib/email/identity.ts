@@ -17,6 +17,8 @@ export interface IdentityState {
   verifiedViaAlternateEmail?: boolean;
   /** Sender not on file; need name + DOB to link to chart. */
   needsAlternateVerification?: boolean;
+  /** Name + DOB provided but no matching patient record. */
+  verificationFailed?: boolean;
 }
 
 export async function resolveIdentity(
@@ -73,6 +75,15 @@ export async function resolveIdentity(
         verifiedViaAlternateEmail: true,
       };
     }
+
+    return {
+      patient: null,
+      emailMatched: false,
+      nameMatched: true,
+      dobVerified: true,
+      verifiedPatientId: null,
+      verificationFailed: true,
+    };
   }
 
   if (claimsAlternateEmail || extractedName || extractedDob) {

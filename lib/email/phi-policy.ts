@@ -27,6 +27,10 @@ export function buildFactsEnvelope(
     return facts;
   }
 
+  if (identity.verificationFailed) {
+    return { verificationFailed: true, alternateEmail: true };
+  }
+
   if (identity.needsAlternateVerification) {
     return {
       needsDob: !identity.dobVerified,

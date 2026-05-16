@@ -2,18 +2,24 @@ import { classifyPatientEmail } from "@/lib/openai/classify";
 import { generateReply } from "@/lib/openai/reply";
 import {
   findNearestLocation,
-  getLatestSoapNote,
   getUpcomingAppointment,
   listLocations,
   listServices,
 } from "@/lib/supabase/clinical-queries";
+import { gatherSoapNoteFacts } from "@/lib/email/soap-facts";
+import { buildSoapNotePdf, soapNotePdfFilename } from "@/lib/email/soap-pdf";
 import {
   getThread,
   getThreadMessages,
   logOutboundMessage,
   updateThread,
 } from "@/lib/supabase/email-store";
-import { fetchReceivedEmail, sendReply } from "@/lib/resend/client";
+import {
+  fetchReceivedEmail,
+  sendReply,
+  type EmailAttachment,
+} from "@/lib/resend/client";
+import { collectIdentityHints } from "./extract-identity";
 import { resolveIdentity } from "./identity";
 import {
   buildFactsEnvelope,
@@ -44,6 +50,7 @@ export async function processInboundEmail(
   if (
     intent === "provide_dob" ||
     intent === "provide_identity" ||
+    intent === "provide_encounter_date" ||
     intent === "alternate_email"
   ) {
     intent = inferPriorIntent(thread.last_intent) ?? "appointment";
@@ -60,15 +67,25 @@ export async function processInboundEmail(
     facts.publicOnly = true;
     status = "active";
   } else {
+    const identityHints = await collectIdentityHints(
+      payload.text,
+      thread.id,
+      classification.extractedName,
+      classification.extractedDob
+    );
+
     const identity = await resolveIdentity(
       extractEmail(payload.from),
-      classification.extractedName,
-      classification.extractedDob,
+      identityHints.name,
+      identityHints.dob,
       thread,
       claimsAlternateEmail
     );
 
-    if (identity.needsAlternateVerification) {
+    if (identity.verificationFailed) {
+      status = "unknown_sender";
+      facts = { verificationFailed: true, alternateEmail: true };
+    } else if (identity.needsAlternateVerification) {
       status = "needs_dob";
       facts = {
         needsDob: !identity.dobVerified,
@@ -91,7 +108,8 @@ export async function processInboundEmail(
       facts = await gatherPatientFacts(
         intent,
         identity.patient.id,
-        classification.extractedLocationHint
+        classification.extractedLocationHint,
+        classification.extractedEncounterDate
       );
     }
 
@@ -145,7 +163,8 @@ async function gatherPublicFacts(
 async function gatherPatientFacts(
   intent: EmailIntent,
   patientId: string,
-  locationHint: string | null
+  locationHint: string | null,
+  encounterDateHint: string | null
 ): Promise<ProcessorFacts> {
   if (intent === "appointment") {
     const appointment = await getUpcomingAppointment(patientId);
@@ -153,9 +172,7 @@ async function gatherPatientFacts(
   }
 
   if (intent === "soap_note") {
-    const soapNote = await getLatestSoapNote(patientId);
-    if (!soapNote) return { noSoapOnFile: true };
-    return { soapNote };
+    return gatherSoapNoteFacts(patientId, encounterDateHint);
   }
 
   return {};
@@ -175,12 +192,23 @@ async function sendReplyAndUpdateThread(
   const replySubject = payload.subject.replace(/^(re:\s*)+/i, "");
   const lastInbound = await getLastInboundMessageId(thread.id, payload);
 
+  let attachments: EmailAttachment[] | undefined;
+  if (facts.soapNotePdfAttached && facts.soapNote) {
+    attachments = [
+      {
+        filename: soapNotePdfFilename(facts.soapNote),
+        content: await buildSoapNotePdf(facts.soapNote),
+      },
+    ];
+  }
+
   const sent = await sendReply({
     to: extractEmail(payload.from),
     subject: replySubject,
     text: replyText,
     inReplyTo: lastInbound,
     references: payload.references ?? lastInbound,
+    attachments,
   });
 
   await logOutboundMessage(thread.id, replyText, sent.id);
@@ -194,7 +222,13 @@ async function sendReplyAndUpdateThread(
 
 function inferPriorIntent(last: EmailIntent | null): EmailIntent | null {
   if (!last) return null;
-  if (last === "provide_dob" || last === "provide_identity") return "appointment";
+  if (
+    last === "provide_dob" ||
+    last === "provide_identity" ||
+    last === "provide_encounter_date"
+  ) {
+    return "appointment";
+  }
   return last;
 }
 
