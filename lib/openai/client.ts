@@ -11,5 +11,9 @@ export function getOpenAI(): OpenAI {
   return openai;
 }
 
-export const CLASSIFY_MODEL = "gpt-4.1-mini";
-export const REPLY_MODEL = "gpt-4.1-mini";
+/** Fast model for JSON intent classification */
+export const CLASSIFY_MODEL =
+  process.env.OPENAI_CLASSIFY_MODEL ?? "gpt-4.1-mini";
+
+/** Higher-quality model for patient-facing replies */
+export const REPLY_MODEL = process.env.OPENAI_REPLY_MODEL ?? "gpt-4.1";
