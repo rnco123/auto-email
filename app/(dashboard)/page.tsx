@@ -3,6 +3,8 @@ import { listThreads } from "@/lib/supabase/email-store";
 import { checkSupabaseConnection } from "@/lib/supabase/health";
 import { seedSampleLogsIfEmpty } from "@/lib/supabase/seed-sample";
 
+export const dynamic = "force-dynamic";
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString(undefined, {
     dateStyle: "short",

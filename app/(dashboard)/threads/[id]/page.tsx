@@ -5,6 +5,8 @@ import {
   getThreadMessages,
 } from "@/lib/supabase/email-store";
 
+export const dynamic = "force-dynamic";
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString(undefined, {
     dateStyle: "short",
