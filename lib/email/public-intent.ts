@@ -1,3 +1,4 @@
+import { extractIdentityFromText } from "@/lib/email/extract-identity";
 import type { EmailIntent } from "@/lib/types";
 
 const SERVICE_PATTERNS =
@@ -27,6 +28,24 @@ export function detectPublicIntentFromText(body: string): EmailIntent | null {
   return null;
 }
 
+function isSoapThreadFollowUp(
+  classified: EmailIntent,
+  body: string,
+  lastIntent: EmailIntent | null
+): boolean {
+  if (lastIntent !== "soap_note") return false;
+  if (
+    classified === "provide_dob" ||
+    classified === "provide_identity" ||
+    classified === "provide_encounter_date" ||
+    classified === "unknown"
+  ) {
+    return true;
+  }
+  const hints = extractIdentityFromText(body);
+  return !!(hints.name && hints.dob) || !!hints.dob;
+}
+
 export function resolveIntent(
   classified: EmailIntent,
   body: string,
@@ -34,9 +53,7 @@ export function resolveIntent(
   verificationDisabled = false
 ): EmailIntent {
   if (detectSoapNoteFromText(body)) return "soap_note";
-  if (lastIntent === "soap_note" && classified === "provide_encounter_date") {
-    return "soap_note";
-  }
+  if (isSoapThreadFollowUp(classified, body, lastIntent)) return "soap_note";
 
   const fromText = detectPublicIntentFromText(body);
   if (fromText) return fromText;
@@ -49,7 +66,7 @@ export function resolveIntent(
       classified === "provide_identity" ||
       classified === "alternate_email"
     ) {
-      return "general_info";
+      return lastIntent === "soap_note" ? "soap_note" : "general_info";
     }
   }
 

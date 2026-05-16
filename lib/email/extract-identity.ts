@@ -12,6 +12,7 @@ const NAME_PATTERNS = [
 
 const DOB_PATTERNS = [
   /(?:date of birth|dob|born on|birthday)(?:\s+is)?[:\s]+([^\n.]+)/i,
+  /\band\s+dob\s+is\s+(\d{4}-\d{2}-\d{2})/i,
   /(\d{4}-\d{2}-\d{2})/,
   /(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/,
   /((?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+\d{4})/i,

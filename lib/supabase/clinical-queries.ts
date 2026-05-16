@@ -82,9 +82,27 @@ export async function findPatientByNameAndDob(
     return null;
   }
 
-  for (const row of data ?? []) {
-    const patient = mapPatientRow(row as Record<string, unknown>);
+  const patients = (data ?? []).map((row) =>
+    mapPatientRow(row as Record<string, unknown>)
+  );
+
+  for (const patient of patients) {
     if (dobMatches(patient.dateOfBirth, dob) && namesMatch(patient.fullName, name)) {
+      return patient;
+    }
+  }
+
+  const dobMatchesList = patients.filter((p) => dobMatches(p.dateOfBirth, dob));
+  if (dobMatchesList.length === 1) {
+    return dobMatchesList[0];
+  }
+
+  const nameParts = normalizeName(name).split(" ").filter(Boolean);
+  const lastName = nameParts[nameParts.length - 1];
+
+  for (const patient of dobMatchesList) {
+    const pn = normalizeName(patient.fullName);
+    if (lastName && pn.includes(lastName) && namesMatch(patient.fullName, name)) {
       return patient;
     }
   }

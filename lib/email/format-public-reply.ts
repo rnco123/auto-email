@@ -37,6 +37,16 @@ export function formatSoapReply(facts: ProcessorFacts): string | null {
     ].join("\n");
   }
 
+  if (facts.soapPatientNotFound) {
+    return [
+      "We could not find a patient chart matching that name and date of birth.",
+      "",
+      "Please check the spelling (as on file) and try again, or call the clinic.",
+      "",
+      "Thank you,",
+    ].join("\n");
+  }
+
   if (facts.needsPatientForSoap || facts.needsPatientInfo === "soap") {
     return [
       "To send your SOAP note as a PDF, please reply with:",

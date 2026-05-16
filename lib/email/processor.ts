@@ -26,6 +26,7 @@ import {
 } from "./phi-policy";
 import { resolveIntent } from "./public-intent";
 import { detectPublicReplyScope } from "./public-scope";
+import { collectIdentityHints } from "./extract-identity";
 import { resolvePatientOptional } from "./resolve-patient";
 import type {
   EmailIntent,
@@ -59,6 +60,12 @@ export async function processInboundEmail(
   intent = resolveIntent(intent, payload.text, thread.last_intent, noVerification);
 
   if (noVerification) {
+    const identityHints = await collectIdentityHints(
+      payload.text,
+      thread.id,
+      classification.extractedName,
+      classification.extractedDob
+    );
     const patient = await resolvePatientOptional(
       extractEmail(payload.from),
       thread,
@@ -69,6 +76,7 @@ export async function processInboundEmail(
       intent,
       patient?.id ?? null,
       payload.text,
+      identityHints,
       classification.extractedLocationHint,
       classification.extractedEncounterDate
     );
@@ -85,7 +93,6 @@ export async function processInboundEmail(
 
   // Production path with verification (DISABLE_PATIENT_VERIFICATION=false)
   const { resolveIdentity } = await import("./identity");
-  const { collectIdentityHints } = await import("./extract-identity");
   const { requiresVerification } = await import("./phi-policy");
 
   const claimsAlternateEmail = classification.intent === "alternate_email";
@@ -185,11 +192,15 @@ async function gatherFactsOpenAccess(
   intent: EmailIntent,
   patientId: string | null,
   body: string,
+  identityHints: { name: string | null; dob: string | null },
   locationHint: string | null,
   encounterDateHint: string | null
 ): Promise<ProcessorFacts> {
   if (intent === "soap_note") {
     if (!patientId) {
+      if (identityHints.name && identityHints.dob) {
+        return { soapPatientNotFound: true };
+      }
       return { needsPatientForSoap: true };
     }
     return gatherSoapNoteFacts(patientId, encounterDateHint);
