@@ -8,16 +8,21 @@ export interface IdentityHints {
 }
 
 const NAME_PATTERNS = [
-  /(?:my name is|name is|i am|i'm)\s+([A-Za-z][A-Za-z\s.'-]{1,80})/i,
-  /(?:full name|patient name)[:\s]+([A-Za-z][A-Za-z\s.'-]{1,80})/i,
+  /(?:my name is|name is|i am|i'm)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s.'-]{1,80})/i,
+  /(?:full name|patient name)[:\s]+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s.'-]{1,80})/i,
+  /(?:^|[\s,])name\s*[:=]\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s.'-]{1,80})/i,
+  /(?:me llamo|mi nombre es)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s.'-]{1,80})/i,
+  /(?:^|[\s,])nombre\s*[:=]\s*([^\n]+)/i,
 ];
 
 const DOB_PATTERNS = [
   /(?:date of birth|dob|born on|birthday)(?:\s+is)?[:\s]+([^\n.]+)/i,
+  /(?:fecha de nacimiento|fecha de nac\.?|nac[ií] el|nacimiento)[:\s]+([^\n.]+)/i,
   /\band\s+dob\s+is\s+(\d{4}-\d{2}-\d{2})/i,
   /(\d{4}-\d{2}-\d{2})/,
   /(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/,
   /((?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+\d{4})/i,
+  /((?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+\d{1,2},?\s+\d{4})/i,
 ];
 
 function extractKeyValueFields(text: string): IdentityHints {
@@ -26,7 +31,7 @@ function extractKeyValueFields(text: string): IdentityHints {
   const last =
     /last[_\s-]?name\s*[:=]\s*([^\n,]+)/i.exec(text)?.[1]?.trim() ?? null;
   const dob =
-    /(?:date[_\s-]?of[_\s-]?birth|dob)\s*[:=]\s*(\d{4}-\d{2}-\d{2}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/i.exec(
+    /(?:date[_\s-]?of[_\s-]?birth|dob|fecha[_\s-]?de[_\s-]?nacimiento)\s*[:=]\s*(\d{4}-\d{2}-\d{2}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/i.exec(
       text
     )?.[1]?.trim() ?? null;
 
@@ -34,7 +39,7 @@ function extractKeyValueFields(text: string): IdentityHints {
     first && last ? `${first} ${last}` : first ?? last;
 
   if (!name) {
-    const labelName = /^name\s*[:=]\s*([^\n]+)/im.exec(text)?.[1]?.trim();
+    const labelName = /(?:^|[\s,])name\s*[:=]\s*([^\n]+)/i.exec(text)?.[1]?.trim();
     if (labelName) {
       name = cleanName(labelName);
       const parts = name.split(/\s+/).filter(Boolean);
@@ -96,43 +101,40 @@ function mergeHint(
   return null;
 }
 
+/**
+ * Merge classifier output with lightweight regex fallback (same thread;
+ * classifier already reads history for structured extraction).
+ */
 export async function collectIdentityHints(
   currentBody: string,
   threadId: string,
   classifiedName: string | null,
   classifiedDob: string | null,
   classifiedFirstName: string | null = null,
-  classifiedLastName: string | null = null
+  classifiedLastName: string | null = null,
+  options?: { inboundHistoryBodies?: string[] }
 ): Promise<IdentityHints> {
-  const messages = await getThreadMessages(threadId);
-
-  const { extractPatientIdentityFromConversation } = await import(
-    "@/lib/openai/extract-identity"
-  );
-  const ai = await extractPatientIdentityFromConversation(
-    messages,
-    currentBody
-  );
-
   const fromCurrent = extractIdentityFromText(currentBody);
 
   let firstName = mergeHint(
-    ai.firstName,
     classifiedFirstName,
     fromCurrent.firstName
   );
   let lastName = mergeHint(
-    ai.lastName,
     classifiedLastName,
     fromCurrent.lastName
   );
-  let name = mergeHint(ai.name, classifiedName, fromCurrent.name);
-  let dob = mergeHint(ai.dob, classifiedDob, fromCurrent.dob);
+  let name = mergeHint(classifiedName, fromCurrent.name);
+  let dob = mergeHint(classifiedDob, fromCurrent.dob);
 
-  const inboundBodies = messages
-    .filter((m) => m.direction === "inbound" && m.body_text)
-    .map((m) => m.body_text as string)
-    .slice(-6);
+  const inboundBodies =
+    options?.inboundHistoryBodies ??
+    (
+      await getThreadMessages(threadId)
+    )
+      .filter((m) => m.direction === "inbound" && m.body_text)
+      .map((m) => m.body_text as string)
+      .slice(-6);
 
   for (const body of inboundBodies) {
     const hints = extractIdentityFromText(body);

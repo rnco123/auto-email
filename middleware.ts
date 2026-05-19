@@ -11,6 +11,13 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  if (
+    process.env.ENABLE_DEV_CHAT === "true" &&
+    (pathname.startsWith("/dev") || pathname.startsWith("/api/dev"))
+  ) {
+    return NextResponse.next();
+  }
+
   if (pathname.startsWith("/api/")) {
     return NextResponse.next();
   }
@@ -35,5 +42,8 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Never run auth middleware on Next assets (CSS/JS chunks) or static files
+  matcher: [
+    "/((?!_next/|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+  ],
 };

@@ -1,8 +1,10 @@
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import { getActiveRulesPromptBlock } from "@/lib/openai/active-rules";
 import type {
   EmailIntent,
   EmailMessage,
   EmailThread,
+  PatientLanguage,
   ProcessorFacts,
 } from "@/lib/types";
 
@@ -20,6 +22,14 @@ export function buildThreadContextBlock(
         subject: thread.subject,
       },
       currentIntent: intent,
+      replyLanguage: facts.replyLanguage ?? "en",
+      aiGuidance: {
+        replyStrategy: facts.replyStrategy ?? null,
+        effectiveIntent: facts.effectiveIntent ?? intent,
+        systemActions: facts.systemActions ?? [],
+        isPolicyQuestion: facts.isPolicyQuestion ?? false,
+        attachSoapPdf: facts.attachSoapPdf ?? null,
+      },
       clinicData: facts,
       timezone: process.env.APP_TIMEZONE ?? "America/New_York",
     },
@@ -29,13 +39,15 @@ export function buildThreadContextBlock(
 }
 
 /** Full conversation as OpenAI chat messages (patient = user, clinic = assistant). */
-export function buildConversationMessages(
+export async function buildConversationMessages(
   history: EmailMessage[],
   thread: EmailThread,
   intent: EmailIntent,
   facts: ProcessorFacts,
   latestPatientText: string
-): ChatCompletionMessageParam[] {
+): Promise<ChatCompletionMessageParam[]> {
+  const lang: PatientLanguage = facts.replyLanguage === "es" ? "es" : "en";
+  const adminRules = await getActiveRulesPromptBlock();
   const sorted = [...history]
     .filter((m) => m.body_text?.trim())
     .sort(
@@ -46,11 +58,11 @@ export function buildConversationMessages(
   const messages: ChatCompletionMessageParam[] = [
     {
       role: "system",
-      content: buildSystemPrompt(),
+      content: buildSystemPrompt(lang, adminRules),
     },
     {
       role: "system",
-      content: `Context for this thread (use clinicData only for factual claims):\n${buildThreadContextBlock(thread, intent, facts)}`,
+      content: `Context for this thread (use clinicData only for factual claims; follow aiGuidance.replyStrategy):\n${buildThreadContextBlock(thread, intent, facts)}`,
     },
   ];
 
@@ -76,26 +88,31 @@ export function buildConversationMessages(
   return messages;
 }
 
-function buildSystemPrompt(): string {
-  return `You are a warm, human clinic front-desk assistant replying by email for MyClinicMD.
+function buildSystemPrompt(lang: PatientLanguage, adminRules: string): string {
+  const languageRule =
+    lang === "es"
+      ? `LANGUAGE: Write entirely in clear, natural Spanish. End with "Gracias," on its own line.`
+      : `LANGUAGE: Write entirely in natural English. End with "Thank you," on its own line.`;
 
-Personality:
-- Sound like a real person, not a bot. Natural, friendly, concise.
-- If they only say hello/hi, reply briefly (e.g. "Hi! How can we help you today?") and offer help.
-- Remember the full email thread — refer back to what was already discussed.
-- Answer only what they asked. Do not dump extra topics unless they asked.
+  const rulesBlock = adminRules ? `\n\n${adminRules}` : "";
 
-Rules:
-- Use ONLY facts from clinicData in context. Never invent appointments, addresses, services, or clinical details.
-- If clinicData.clinicDataUnavailable is true, explain records are temporarily unreachable (admin must fix database access).
-- If clinicData.soapNotePdfAttached is true, say the SOAP note is attached as a PDF (do not paste clinical text). Do not say you will send it later.
-- If clinicData.noSoapOnFile is true, say we do not have a SOAP note on file for their chart and suggest calling the clinic. Do not promise to prepare or send one later.
-- If clinicData.needsEncounterDate, ask which visit date from encounterOptions.
-- If clinicData.needsPatientForSoap or needsPatientInfo, ask naturally for name/DOB or visit date.
-- If clinicData.soapPatientNotFound, say you could not find their chart with that info — suggest checking spelling.
-- For services or locations, use bullet lists (one per line) when listing multiple items.
-- If clinicData.replyScope is "locations" or "both" and clinicData.locations has items, list them from that array only.
-- If replyScope asks for locations but clinicData.locations is missing or empty, say location info is temporarily unavailable — do not invent zip-code lookups or promise to send details later.
-- Do not mention AI, automation, or internal systems.
-- Plain text only. Short paragraphs. End with "Thank you," on its own line.`;
+  return `You are a warm, intelligent clinic front-desk assistant for MyClinicMD (email/chat).
+
+${languageRule}${rulesBlock}
+
+How to think (every turn):
+1. Read the full thread and the patient's latest message — they may write anything (questions, jokes, typos, English, Spanish, mixed).
+2. Follow aiGuidance.replyStrategy in context — it was written for this specific turn.
+3. Use clinicData for facts only; never invent clinical details, addresses, or appointments.
+4. Answer what they asked NOW. Do not repeat a previous reply (e.g. do not resend "PDF ready" if they asked a policy question).
+5. Be conversational — not a form letter, not bullet lists unless listing locations/services.
+
+When clinicData.soapNotePdfAttached is true AND aiGuidance says to share PDF: mention download (chat) or attachment (email). Do not paste clinical text.
+When clinicData.soapPatientNotFound: say chart not found; suggest checking spelling.
+When clinicData.needsPatientForSoap: ask only for missing info (see identityHints — do not re-ask what you have).
+When clinicData.isPolicyQuestion or aiGuidance.isPolicyQuestion: explain we only release records for the verified patient (name + DOB), not others — no PDF.
+When clinicData.publicOnly: general or policy answer using clinicData; no SOAP PDF unless they explicitly request their own note again.
+When listing services/locations: use clinicData arrays only, one item per line.
+
+Never mention AI, bots, or automation. Plain text, short paragraphs.`;
 }

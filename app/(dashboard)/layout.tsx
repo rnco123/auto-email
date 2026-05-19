@@ -1,6 +1,14 @@
 import Link from "next/link";
 import { LogoutButton } from "./logout-button";
 
+const NAV = [
+  { href: "/", label: "Home" },
+  { href: "/threads", label: "Threads" },
+  { href: "/rules", label: "Rules" },
+  { href: "/chat", label: "Chat-Dev" },
+  { href: "/usage", label: "Usage" },
+] as const;
+
 export default function DashboardLayout({
   children,
 }: {
@@ -12,14 +20,18 @@ export default function DashboardLayout({
         <h1>
           <Link href="/">Patient Email Automation</Link>
         </h1>
+        <nav className="app-header-nav" aria-label="Dashboard">
+          {NAV.map(({ href, label }) => (
+            <Link key={href} href={href}>
+              {label}
+            </Link>
+          ))}
+        </nav>
         <div className="app-header-actions">
-          <span className="muted" style={{ fontSize: "0.875rem" }}>
-            Read-only logs
-          </span>
           <LogoutButton />
         </div>
       </header>
-      <main className="container">{children}</main>
+      <main className="container container-wide">{children}</main>
     </>
   );
 }

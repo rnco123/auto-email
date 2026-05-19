@@ -19,6 +19,12 @@ export type EmailIntent =
 
 export type MessageDirection = "inbound" | "outbound";
 
+export type ThreadFeedbackStage =
+  | "none"
+  | "awaiting_resolution"
+  | "awaiting_rating"
+  | "complete";
+
 export interface EmailThread {
   id: string;
   patient_email: string;
@@ -27,6 +33,9 @@ export interface EmailThread {
   last_intent: EmailIntent | null;
   verified_patient_id: string | null;
   message_id_root: string | null;
+  feedback_stage?: ThreadFeedbackStage;
+  resolved_at?: string | null;
+  resolution_confirmed?: boolean | null;
   created_at: string;
   updated_at: string;
 }
@@ -88,15 +97,52 @@ export interface EncounterOption {
   encounterDate: string | null;
 }
 
+export type PatientLanguage = "en" | "es";
+
+export type SystemAction =
+  | "lookup_patient"
+  | "fetch_soap_note"
+  | "list_locations"
+  | "list_services"
+  | "lookup_appointment"
+  | "none";
+
 export interface ClassificationResult {
+  /** What the latest message literally is (e.g. provide_identity). */
   intent: EmailIntent;
+  /** What the backend should execute (AI decides — used instead of regex rules). */
+  effectiveIntent?: EmailIntent;
+  /** Planned system steps from AI analysis. */
+  systemActions?: SystemAction[];
   extractedName: string | null;
   extractedFirstName: string | null;
   extractedLastName: string | null;
   extractedDob: string | null;
   extractedLocationHint: string | null;
   extractedEncounterDate: string | null;
+  /** Language the patient is using (for replies). */
+  patientLanguage?: PatientLanguage;
+  /** Short instruction for the reply model (this turn). */
+  replyStrategy?: string | null;
+  publicReplyScope?: PublicReplyScope;
+  attachSoapPdf?: boolean;
+  isPolicyQuestion?: boolean;
+  /** AI believes the patient's request was fulfilled this turn. */
+  issueLikelyResolved?: boolean;
+  /** Ask resolution yes/no then 1–5 rating after this reply. */
+  shouldAskResolutionFeedback?: boolean;
   confidence: number;
+}
+
+export interface AdminRule {
+  id: string;
+  title: string;
+  body: string;
+  category: string | null;
+  active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export type PublicReplyScope = "services" | "locations" | "both" | "none";
@@ -124,6 +170,22 @@ export interface ProcessorFacts {
   clinicDataUnavailable?: boolean;
   needsPatientInfo?: "soap" | "appointment";
   publicOnly?: boolean;
+  /** email = Resend attachment; chat = dev UI download link */
+  replyChannel?: "email" | "chat";
+  /** Identity parsed from this turn + thread (for reply model). */
+  identityHints?: {
+    name: string | null;
+    dob: string | null;
+  };
+  resolvedPatientId?: string | null;
+  /** Reply language for this turn (en / es). */
+  replyLanguage?: PatientLanguage;
+  /** Copied from analysis for the reply model. */
+  replyStrategy?: string | null;
+  effectiveIntent?: EmailIntent;
+  systemActions?: SystemAction[];
+  isPolicyQuestion?: boolean;
+  attachSoapPdf?: boolean;
 }
 
 export interface InboundEmailPayload {

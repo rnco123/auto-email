@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start -H 0.0.0.0",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:log": "node scripts/append-test-result.mjs",
+    "test:scenarios": "npx tsx scripts/run-scenario-tests.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
@@ -15,6 +19,7 @@
     "pdfkit": "^0.18.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "recharts": "^2.15.4",
     "resend": "^4.1.2",
     "svix": "^1.61.0",
     "zod": "^3.24.2"
@@ -27,6 +32,7 @@
     "@types/react-dom": "^19.0.4",
     "eslint": "^9.22.0",
     "eslint-config-next": "^15.2.4",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "vitest": "^3.2.4"
   }
 }

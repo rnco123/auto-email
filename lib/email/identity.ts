@@ -2,9 +2,9 @@ import {
   dobMatches,
   findPatientByEmail,
   findPatientById,
-  findPatientByNameAndDob,
   namesMatch,
 } from "@/lib/supabase/clinical-queries";
+import { findPatientByNameAndDob } from "@/lib/supabase/patient-lookup";
 import type { EmailThread, PatientRecord } from "@/lib/types";
 
 export interface IdentityState {

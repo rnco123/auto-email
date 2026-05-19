@@ -1,5 +1,6 @@
-import PDFDocument from "pdfkit";
 import type { SoapNoteRecord } from "@/lib/types";
+// Standalone build embeds font metrics — required for Next.js (avoids ENOENT on .afm files).
+import PDFDocument from "pdfkit/js/pdfkit.standalone.js";
 
 export async function buildSoapNotePdf(note: SoapNoteRecord): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -46,10 +47,8 @@ function writeSection(
   body: string | null
 ): void {
   doc.moveDown(0.5);
-  doc.fontSize(12).font("Helvetica-Bold").text(title);
-  doc.fontSize(10).font("Helvetica").text(body?.trim() || "—", {
-    align: "left",
-  });
+  doc.fontSize(12).text(title);
+  doc.fontSize(10).text(body?.trim() || "—", { align: "left" });
 }
 
 function formatDisplayDate(iso: string): string {

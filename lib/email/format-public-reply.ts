@@ -1,3 +1,12 @@
+import {
+  clinicMsg,
+  msgSoapWhen,
+  msgThankYou,
+} from "@/lib/i18n/clinic-messages";
+import {
+  formatVisitDateLocalized,
+  type PatientLanguage,
+} from "@/lib/i18n/patient-language";
 import type {
   EncounterOption,
   LocationRecord,
@@ -6,107 +15,108 @@ import type {
   ServiceRecord,
 } from "@/lib/types";
 
-function formatVisitDate(iso: string | null): string {
-  if (!iso) return "Unknown date";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: process.env.APP_TIMEZONE ?? "America/New_York",
-  });
+function langFromFacts(facts: ProcessorFacts): PatientLanguage {
+  return facts.replyLanguage === "es" ? "es" : "en";
 }
 
-function formatEncounterDateList(options: EncounterOption[]): string {
+function formatEncounterDateList(
+  options: EncounterOption[],
+  lang: PatientLanguage
+): string {
   return options
-    .map((o) => `• ${formatVisitDate(o.encounterDate)}`)
+    .map((o) => `• ${formatVisitDateLocalized(o.encounterDate, lang)}`)
     .join("\n");
 }
 
 /** Deterministic SOAP replies — never mix in services or locations. */
 export function formatSoapReply(facts: ProcessorFacts): string | null {
+  const lang = langFromFacts(facts);
+
   if (facts.soapNotePdfAttached && facts.soapNote) {
-    const when = facts.soapNote.encounterDate
-      ? `from your visit on ${formatVisitDate(facts.soapNote.encounterDate)}`
-      : "from your visit";
-    return [
-      `Please find your SOAP note ${when} attached as a PDF.`,
-      "",
-      "Thank you,",
-    ].join("\n");
+    const when = msgSoapWhen(lang, facts.soapNote.encounterDate);
+    const body = facts.replyChannel === "chat"
+      ? clinicMsg(lang, "soapPdfReadyChat").replace("{when}", when)
+      : clinicMsg(lang, "soapPdfReadyEmail").replace("{when}", when);
+    return [body, "", msgThankYou(lang)].join("\n");
   }
 
   if (facts.clinicDataUnavailable) {
     return [
-      "Our system cannot reach patient records right now (database access is not configured).",
+      clinicMsg(lang, "clinicDataUnavailable"),
       "",
-      "Please ask your clinic admin to enable patient read access in Supabase, then try again.",
+      clinicMsg(lang, "clinicDataUnavailableHint"),
       "",
-      "Thank you,",
+      msgThankYou(lang),
     ].join("\n");
   }
 
   if (facts.soapPatientNotFound) {
     return [
-      "We could not find a patient chart matching that name and date of birth.",
+      clinicMsg(lang, "chartNotFound"),
       "",
-      "Please check the spelling (as on file) and try again, or call the clinic.",
+      clinicMsg(lang, "chartNotFoundHint"),
       "",
-      "Thank you,",
+      msgThankYou(lang),
     ].join("\n");
   }
 
   if (facts.needsPatientForSoap || facts.needsPatientInfo === "soap") {
+    if (facts.identityHints?.name?.trim() && facts.identityHints?.dob) {
+      return [
+        clinicMsg(lang, "chartNotFound"),
+        "",
+        clinicMsg(lang, "chartNotFoundHint"),
+        "",
+        msgThankYou(lang),
+      ].join("\n");
+    }
     return [
-      "To send your SOAP note as a PDF, please reply with:",
+      clinicMsg(lang, "needIdentityIntro"),
       "",
-      "• Your full name and date of birth exactly as they appear on file, or",
-      "• The date of your visit (if you have had more than one visit).",
+      clinicMsg(lang, "needIdentityNameDob"),
+      clinicMsg(lang, "needIdentityVisit"),
       "",
-      "Thank you,",
+      msgThankYou(lang),
     ].join("\n");
   }
 
   if (facts.needsPatientInfo === "appointment") {
-    return [
-      "To look up your appointment, please reply with your full name and date of birth exactly as they appear on file.",
-      "",
-      "Thank you,",
-    ].join("\n");
+    return [clinicMsg(lang, "needIdentityAppointment"), "", msgThankYou(lang)].join(
+      "\n"
+    );
   }
 
   if (facts.needsEncounterDate && facts.encounterOptions?.length) {
-    const dates = formatEncounterDateList(facts.encounterOptions);
+    const dates = formatEncounterDateList(facts.encounterOptions, lang);
     if (facts.encounterDateNotFound) {
       return [
-        "We could not find a SOAP note for that visit date.",
+        clinicMsg(lang, "encounterNotFound"),
         "",
-        "Please reply with one of these visit dates:",
+        clinicMsg(lang, "pickEncounter"),
         "",
         dates,
         "",
-        "Thank you,",
+        msgThankYou(lang),
       ].join("\n");
     }
     return [
-      "We have SOAP notes for more than one visit.",
+      clinicMsg(lang, "multipleEncounters"),
       "",
-      "Please reply with the visit date you need:",
+      clinicMsg(lang, "whichEncounter"),
       "",
       dates,
       "",
-      "Thank you,",
+      msgThankYou(lang),
     ].join("\n");
   }
 
   if (facts.noSoapOnFile) {
     return [
-      "We do not have a SOAP note on file for your chart.",
+      clinicMsg(lang, "noSoapOnFile"),
       "",
-      "Please call the clinic if you need assistance.",
+      clinicMsg(lang, "callClinic"),
       "",
-      "Thank you,",
+      msgThankYou(lang),
     ].join("\n");
   }
 
@@ -120,7 +130,13 @@ function formatLocationLine(loc: LocationRecord): string {
   return `• ${parts.join(" — ")}`;
 }
 
-function formatServiceLine(svc: ServiceRecord): string {
+function formatServiceLine(
+  svc: ServiceRecord,
+  lang: PatientLanguage
+): string {
+  if (lang === "es" && svc.titleEs?.trim()) {
+    return `• ${svc.titleEs}`;
+  }
   if (svc.titleEs && svc.titleEs !== svc.titleEn) {
     return `• ${svc.titleEn} / ${svc.titleEs}`;
   }
@@ -130,61 +146,68 @@ function formatServiceLine(svc: ServiceRecord): string {
 export function formatScopedPublicReply(
   scope: PublicReplyScope,
   services: ServiceRecord[] | undefined,
-  locations: LocationRecord[] | undefined
+  locations: LocationRecord[] | undefined,
+  lang: PatientLanguage = "en"
 ): string | null {
   if (scope === "none") {
-    return (
-      "Thank you for contacting us. You can ask about our services or clinic locations, and we will be happy to help.\n\nThank you,"
-    );
+    return [clinicMsg(lang, "contactIntro"), "", msgThankYou(lang)].join("\n");
   }
 
   if (scope === "services") {
     if (!services?.length) {
-      return "We do not have service information available by email at the moment. Please call the clinic.\n\nThank you,";
+      return [clinicMsg(lang, "noServices"), "", msgThankYou(lang)].join("\n");
     }
-    const lines = services.map(formatServiceLine);
+    const lines = services.map((s) => formatServiceLine(s, lang));
     return [
-      "Here are the services we offer:",
+      clinicMsg(lang, "servicesHeader"),
       "",
       ...lines,
       "",
-      "Reply if you would like more detail about a specific service.",
+      clinicMsg(lang, "servicesFooter"),
       "",
-      "Thank you,",
+      msgThankYou(lang),
     ].join("\n");
   }
 
   if (scope === "locations") {
     if (!locations?.length) {
-      return "We do not have location information available by email at the moment. Please call the clinic.\n\nThank you,";
+      return [clinicMsg(lang, "noLocations"), "", msgThankYou(lang)].join("\n");
     }
     const lines = locations.map(formatLocationLine);
     return [
       locations.length === 1
-        ? "Here is our clinic location:"
-        : "Here are our clinic locations:",
+        ? clinicMsg(lang, "locationOne")
+        : clinicMsg(lang, "locationMany"),
       "",
       ...lines,
       "",
-      "Reply with your city or area if you need the location nearest to you.",
+      clinicMsg(lang, "locationFooter"),
       "",
-      "Thank you,",
+      msgThankYou(lang),
     ].join("\n");
   }
 
   if (scope === "both") {
     const sections: string[] = [];
     if (services?.length) {
-      sections.push("Services we offer:", "", ...services.map(formatServiceLine));
+      sections.push(
+        clinicMsg(lang, "servicesSection"),
+        "",
+        ...services.map((s) => formatServiceLine(s, lang))
+      );
     }
     if (locations?.length) {
       if (sections.length) sections.push("", "");
-      sections.push("Clinic locations:", "", ...locations.map(formatLocationLine));
+      sections.push(
+        clinicMsg(lang, "locationsSection"),
+        "",
+        ...locations.map(formatLocationLine)
+      );
     }
     if (!sections.length) {
-      return "Please call the clinic for more information.\n\nThank you,";
+      return [clinicMsg(lang, "callForInfo"), "", msgThankYou(lang)].join("\n");
     }
-    sections.push("", "Thank you,");
+    sections.push("", msgThankYou(lang));
     return sections.join("\n");
   }
 

@@ -34,32 +34,50 @@ function LoginForm() {
   }
 
   return (
-    <div className="login-form">
-      <h2 style={{ marginTop: 0 }}>Dashboard login</h2>
-      <form onSubmit={onSubmit}>
-        <label htmlFor="password">Password</label>
-        <input
-          id="password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete="current-password"
-          required
-        />
-        {error && (
-          <p style={{ color: "var(--danger)", fontSize: "0.875rem" }}>{error}</p>
-        )}
-        <button type="submit" disabled={loading}>
-          {loading ? "Signing in…" : "Sign in"}
-        </button>
-      </form>
+    <div className="login-page">
+      <div className="login-card">
+        <header className="login-brand">
+          <h1 className="login-title">MCM-Email Automation</h1>
+          <p className="login-subtitle">Staff dashboard sign-in</p>
+        </header>
+
+        <form className="login-form" onSubmit={onSubmit}>
+          <label htmlFor="password">Password</label>
+          <input
+            id="password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            placeholder="Enter your password"
+            required
+            autoFocus
+          />
+          {error && (
+            <p className="login-error" role="alert">
+              {error}
+            </p>
+          )}
+          <button type="submit" className="login-submit" disabled={loading}>
+            {loading ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="login-form">Loading…</div>}>
+    <Suspense
+      fallback={
+        <div className="login-page">
+          <div className="login-card login-card--loading">
+            <p className="login-subtitle">Loading…</p>
+          </div>
+        </div>
+      }
+    >
       <LoginForm />
     </Suspense>
   );

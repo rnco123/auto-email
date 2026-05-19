@@ -74,50 +74,6 @@ export async function findPatientByEmail(
   return mapPatientRow(asPatientRow(data));
 }
 
-/** Verify identity when patient emails from an address not on file. */
-export async function findPatientByNameAndDob(
-  name: string,
-  dob: string
-): Promise<PatientRecord | null> {
-  const supabase = getSupabaseAdmin();
-
-  const { data, error } = await supabase
-    .from(p.table)
-    .select(`${p.id}, ${p.email}, ${p.firstName}, ${p.lastName}, ${p.dob}`);
-
-  if (error) {
-    console.error("findPatientByNameAndDob error:", error.message);
-    return null;
-  }
-
-  const patients = (data ?? []).map((row) =>
-    mapPatientRow(row as Record<string, unknown>)
-  );
-
-  for (const patient of patients) {
-    if (dobMatches(patient.dateOfBirth, dob) && namesMatch(patient.fullName, name)) {
-      return patient;
-    }
-  }
-
-  const dobMatchesList = patients.filter((p) => dobMatches(p.dateOfBirth, dob));
-  if (dobMatchesList.length === 1) {
-    return dobMatchesList[0];
-  }
-
-  const nameParts = normalizeName(name).split(" ").filter(Boolean);
-  const lastName = nameParts[nameParts.length - 1];
-
-  for (const patient of dobMatchesList) {
-    const pn = normalizeName(patient.fullName);
-    if (lastName && pn.includes(lastName) && namesMatch(patient.fullName, name)) {
-      return patient;
-    }
-  }
-
-  return null;
-}
-
 export function normalizeName(name: string): string {
   return name
     .toLowerCase()
@@ -190,6 +146,15 @@ export function dobMatches(patientDob: string, provided: string): boolean {
     expected.month === actual.month &&
     expected.day === actual.day
   );
+}
+
+/** Calendar date in YYYY-MM-DD for SQL filters on date columns. */
+export function dobToIsoDateString(provided: string): string | null {
+  const parts = parseDobParts(provided.trim());
+  if (!parts) return null;
+  const mm = String(parts.month).padStart(2, "0");
+  const dd = String(parts.day).padStart(2, "0");
+  return `${parts.year}-${mm}-${dd}`;
 }
 
 export async function getUpcomingAppointment(

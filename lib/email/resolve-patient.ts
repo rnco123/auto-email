@@ -1,4 +1,5 @@
-import { collectIdentityHints } from "@/lib/email/extract-identity";
+import type { IdentityHints } from "@/lib/email/extract-identity";
+import { identityFromAnalysis } from "@/lib/email/identity-from-analysis";
 import {
   dobMatches,
   findPatientByEmail,
@@ -28,21 +29,15 @@ export async function resolvePatientOptional(
   senderEmail: string,
   thread: EmailThread,
   body: string,
-  classification: ClassificationResult
+  classification: ClassificationResult,
+  precomputedHints?: IdentityHints
 ): Promise<ResolvePatientResult> {
   if (thread.verified_patient_id) {
     const byThread = await findPatientById(thread.verified_patient_id);
     if (byThread) return { patient: byThread, dbError: null };
   }
 
-  const hints = await collectIdentityHints(
-    body,
-    thread.id,
-    classification.extractedName,
-    classification.extractedDob,
-    classification.extractedFirstName,
-    classification.extractedLastName
-  );
+  const hints = precomputedHints ?? identityFromAnalysis(classification);
 
   if (hasIdentityHints(hints)) {
     const lookup = await lookupPatientByIdentity({

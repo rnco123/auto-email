@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ThreadCompose } from "@/components/dashboard/thread-compose";
 import {
   getThread,
   getThreadMessages,
@@ -42,8 +43,8 @@ export default async function ThreadDetailPage({
     error = e instanceof Error ? e.message : "Failed to load thread";
     return (
       <div>
-        <Link href="/" className="back-link">
-          ← All threads
+        <Link href="/threads" className="back-link">
+          ← Threads
         </Link>
         <p style={{ color: "var(--danger)" }}>{error}</p>
       </div>
@@ -51,35 +52,45 @@ export default async function ThreadDetailPage({
   }
 
   return (
-    <>
-      <Link href="/" className="back-link">
-        ← All threads
-      </Link>
-      <div className="page-title-row">
-        <h2 style={{ marginTop: 0 }}>{thread.patient_email}</h2>
-        <RefreshButton />
-      </div>
-      <p className="muted">
-        {thread.subject ?? "(no subject)"} ·{" "}
-        <span className={`badge ${thread.status}`}>{thread.status}</span>
-        {thread.last_intent && <> · {thread.last_intent}</>}
-      </p>
+    <div className="thread-detail-layout">
+      <div className="thread-detail-main">
+        <Link href="/threads" className="back-link">
+          ← Threads
+        </Link>
+        <div className="page-title-row">
+          <h2 style={{ marginTop: 0 }}>{thread.patient_email}</h2>
+          <RefreshButton />
+        </div>
+        <p className="muted">
+          {thread.subject ?? "(no subject)"} ·{" "}
+          <span className={`badge ${thread.status}`}>{thread.status}</span>
+          {thread.last_intent && <> · {thread.last_intent}</>}
+        </p>
 
-      <div className="messages">
-        {messages.map((m) => (
-          <div key={m.id} className={`message ${m.direction}`}>
-            <div className="message-meta">
-              {m.direction === "inbound" ? "Patient" : "Clinic"} ·{" "}
-              {formatDate(m.created_at)}
+        <div className="messages">
+          {messages.map((m) => (
+            <div key={m.id} className={`message ${m.direction}`}>
+              <div className="message-meta">
+                {m.direction === "inbound" ? "Patient" : "Clinic"} ·{" "}
+                {formatDate(m.created_at)}
+              </div>
+              {maskDobInText(m.body_text)}
             </div>
-            {maskDobInText(m.body_text)}
-          </div>
-        ))}
+          ))}
+        </div>
+
+        {messages.length === 0 && (
+          <p className="muted">No messages in this thread.</p>
+        )}
       </div>
 
-      {messages.length === 0 && (
-        <p className="muted">No messages in this thread.</p>
-      )}
-    </>
+      <aside className="thread-detail-aside">
+        <ThreadCompose
+          threadId={thread.id}
+          defaultSubject={thread.subject ?? "Your clinic message"}
+          patientEmail={thread.patient_email}
+        />
+      </aside>
+    </div>
   );
 }

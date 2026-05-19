@@ -171,6 +171,85 @@ export async function listThreads(limit = 50): Promise<EmailThread[]> {
   return (data ?? []) as EmailThread[];
 }
 
+export type ThreadListItem = EmailThread & {
+  message_count: number;
+  last_message_at: string | null;
+  last_direction: "inbound" | "outbound" | null;
+};
+
+export async function listThreadsWithPreview(
+  limit = 100
+): Promise<ThreadListItem[]> {
+  const supabase = getSupabaseAdmin();
+  const { data: threads, error } = await supabase
+    .from("email_threads")
+    .select("*")
+    .order("updated_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  if (!threads?.length) return [];
+
+  const threadIds = threads.map((t) => t.id as string);
+  const { data: messages, error: msgError } = await supabase
+    .from("email_messages")
+    .select("thread_id, direction, created_at")
+    .in("thread_id", threadIds)
+    .order("created_at", { ascending: false });
+  if (msgError) throw msgError;
+
+  const meta = new Map<
+    string,
+    { count: number; lastAt: string | null; lastDir: "inbound" | "outbound" | null }
+  >();
+
+  for (const row of messages ?? []) {
+    const r = row as {
+      thread_id: string;
+      direction: "inbound" | "outbound";
+      created_at: string;
+    };
+    const existing = meta.get(r.thread_id);
+    if (!existing) {
+      meta.set(r.thread_id, {
+        count: 1,
+        lastAt: r.created_at,
+        lastDir: r.direction,
+      });
+    } else {
+      existing.count += 1;
+    }
+  }
+
+  return (threads as EmailThread[]).map((t) => {
+    const m = meta.get(t.id);
+    return {
+      ...t,
+      message_count: m?.count ?? 0,
+      last_message_at: m?.lastAt ?? null,
+      last_direction: m?.lastDir ?? null,
+    };
+  });
+}
+
+export async function getLastInboundMessageId(
+  threadId: string
+): Promise<string | null> {
+  const supabase = getSupabaseAdmin();
+  const { data } = await supabase
+    .from("email_messages")
+    .select("raw_metadata")
+    .eq("thread_id", threadId)
+    .eq("direction", "inbound")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!data?.raw_metadata) return null;
+  const meta = data.raw_metadata as Record<string, unknown>;
+  const messageId = meta.messageId;
+  return typeof messageId === "string" ? messageId : null;
+}
+
 export async function getThread(id: string): Promise<EmailThread | null> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase

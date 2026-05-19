@@ -1,4 +1,18 @@
-import { classifyPatientEmail } from "@/lib/openai/classify";
+import { identityFromAnalysis } from "@/lib/email/identity-from-analysis";
+import { effectiveIntentFromAnalysis } from "@/lib/email/effective-intent";
+import {
+  gatherFactsFromAnalysis,
+  resolveOutboundSoapAttachment,
+} from "@/lib/email/execute-system-actions";
+import {
+  enrichFactsForReply,
+  processPatientTurn,
+} from "@/lib/email/process-patient-turn";
+import {
+  detectPatientLanguage,
+  resolveReplyLanguage,
+} from "@/lib/i18n/patient-language";
+import { analyzePatientMessage } from "@/lib/openai/analyze-patient-message";
 import { generateReply } from "@/lib/openai/reply";
 import {
   findNearestLocation,
@@ -8,6 +22,12 @@ import {
 } from "@/lib/supabase/clinical-queries";
 import { gatherSoapNoteFacts } from "@/lib/email/soap-facts";
 import { buildSoapNotePdf, soapNotePdfFilename } from "@/lib/email/soap-pdf";
+import {
+  appendResolutionPrompt,
+  handleEmailFeedbackTurn,
+  threadFeedbackStage,
+  updateThreadFeedbackStage,
+} from "@/lib/supabase/thread-feedback";
 import {
   getThread,
   getThreadMessages,
@@ -24,15 +44,15 @@ import {
   isPublicReadonlyIntent,
   isVerificationDisabled,
 } from "./phi-policy";
-import { resolveIntent } from "./public-intent";
 import { detectPublicReplyScope } from "./public-scope";
-import { collectIdentityHints } from "./extract-identity";
 import { resolvePatientOptional } from "./resolve-patient";
 import type {
+  ClassificationResult,
   EmailIntent,
   EmailMessage,
   EmailThread,
   InboundEmailPayload,
+  PatientLanguage,
   ProcessorFacts,
   ThreadStatus,
 } from "@/lib/types";
@@ -42,87 +62,132 @@ export async function processInboundEmail(
   thread: EmailThread
 ): Promise<void> {
   const history = await getThreadMessages(thread.id);
-  const classification = await classifyPatientEmail(
-    payload.subject,
+  const patientBodies = [
+    ...history
+      .filter((m) => m.direction === "inbound" && m.body_text)
+      .map((m) => m.body_text as string),
     payload.text,
-    thread,
-    history
-  );
+  ];
+  const lang = detectPatientLanguage(...patientBodies);
 
-  let intent = classification.intent;
-  if (
-    intent === "provide_dob" ||
-    intent === "provide_identity" ||
-    intent === "provide_encounter_date" ||
-    intent === "alternate_email"
-  ) {
-    intent = inferPriorIntent(thread.last_intent) ?? "appointment";
+  const feedbackStage = threadFeedbackStage(thread);
+  if (feedbackStage === "awaiting_resolution" || feedbackStage === "awaiting_rating") {
+    const feedbackTurn = await handleEmailFeedbackTurn(thread, payload.text, lang);
+    if (feedbackTurn.handled) {
+      await sendReplyAndUpdateThread(
+        payload,
+        thread,
+        thread.last_intent ?? "unknown",
+        { replyLanguage: lang },
+        thread.status,
+        thread.verified_patient_id,
+        history,
+        { replyText: feedbackTurn.replyText }
+      );
+      return;
+    }
   }
 
   const noVerification = isVerificationDisabled();
-  intent = resolveIntent(intent, payload.text, thread.last_intent, noVerification);
 
   if (noVerification) {
-    const identityHints = await collectIdentityHints(
-      payload.text,
-      thread.id,
-      classification.extractedName,
-      classification.extractedDob,
-      classification.extractedFirstName,
-      classification.extractedLastName
-    );
-    const { patient, dbError } = await resolvePatientOptional(
-      extractEmail(payload.from),
+    const turn = await processPatientTurn({
       thread,
-      payload.text,
-      classification
-    );
-    const facts = await gatherFactsOpenAccess(
-      intent,
-      patient?.id ?? null,
-      payload.text,
-      identityHints,
-      dbError,
-      classification.extractedLocationHint,
-      classification.extractedEncounterDate
-    );
+      patientMessage: payload.text,
+      subject: payload.subject,
+      fromEmail: extractEmail(payload.from),
+      history,
+      replyChannel: "email",
+    });
+    if (
+      turn.analysis.shouldAskResolutionFeedback &&
+      feedbackStage === "none"
+    ) {
+      await updateThreadFeedbackStage(thread.id, "awaiting_resolution");
+    }
     await sendReplyAndUpdateThread(
       payload,
       thread,
-      intent,
-      facts,
+      turn.intent,
+      turn.facts,
       "active",
-      patient?.id ?? thread.verified_patient_id,
-      history
+      turn.patientId ?? thread.verified_patient_id,
+      history,
+      {
+        replyText: turn.replyText,
+        analysis: turn.analysis,
+        replyLanguage: turn.facts.replyLanguage,
+      }
     );
     return;
   }
+
+  const analysis = await analyzePatientMessage(
+    payload.subject,
+    payload.text,
+    thread,
+    history,
+    { threadIdForUsage: thread.id }
+  );
+
+  const classification = analysis;
+  const intent = effectiveIntentFromAnalysis(analysis, thread);
 
   // Production path with verification (DISABLE_PATIENT_VERIFICATION=false)
   const { resolveIdentity } = await import("./identity");
   const { requiresVerification } = await import("./phi-policy");
 
   const claimsAlternateEmail = classification.intent === "alternate_email";
-  let facts: ProcessorFacts = {};
+  const replyLanguage = resolveReplyLanguage(
+    classification,
+    payload.text,
+    patientBodies
+  );
+
+  let facts: ProcessorFacts = { replyLanguage };
   let status: ThreadStatus = thread.status;
 
-  if (isPublicReadonlyIntent(intent)) {
-    facts = await gatherPublicFacts(
+  const enrichFromAnalysis = (
+    base: ProcessorFacts,
+    identityHints: ReturnType<typeof identityFromAnalysis>,
+    resolvedPatientId: string | null,
+    patientName?: string | null
+  ): ProcessorFacts =>
+    enrichFactsForReply(base, {
+      analysis: classification,
       intent,
-      payload.text,
-      classification.extractedLocationHint
+      replyLanguage,
+      identityHints: {
+        name: identityHints.name,
+        dob: identityHints.dob,
+      },
+      resolvedPatientId,
+      patientName,
+      replyChannel: "email",
+    });
+
+  const publicIdentityHints = identityFromAnalysis(classification, {
+    patientBodies,
+  });
+
+  if (isPublicReadonlyIntent(intent)) {
+    facts = enrichFromAnalysis(
+      await gatherFactsFromAnalysis(classification, {
+        patientId: null,
+        body: payload.text,
+        identityHints: publicIdentityHints,
+        dbError: null,
+        locationHint: classification.extractedLocationHint,
+        encounterDateHint: classification.extractedEncounterDate,
+      }),
+      publicIdentityHints,
+      thread.verified_patient_id
     );
-    facts.publicOnly = true;
     status = "active";
   } else {
-    const identityHints = await collectIdentityHints(
-      payload.text,
-      thread.id,
-      classification.extractedName,
-      classification.extractedDob,
-      classification.extractedFirstName,
-      classification.extractedLastName
-    );
+    const identityHints = identityFromAnalysis(classification, {
+      patientBodies,
+    });
 
     const identity = await resolveIdentity(
       extractEmail(payload.from),
@@ -155,11 +220,18 @@ export async function processInboundEmail(
       };
     } else if (identity.verifiedPatientId && identity.patient) {
       status = "verified";
-      facts = await gatherPatientFacts(
-        intent,
-        identity.patient.id,
-        classification.extractedLocationHint,
-        classification.extractedEncounterDate
+      facts = enrichFromAnalysis(
+        await gatherFactsFromAnalysis(classification, {
+          patientId: identity.verifiedPatientId,
+          body: payload.text,
+          identityHints,
+          dbError: null,
+          locationHint: classification.extractedLocationHint,
+          encounterDateHint: classification.extractedEncounterDate,
+        }),
+        identityHints,
+        identity.verifiedPatientId,
+        identity.patient.fullName
       );
     }
 
@@ -171,7 +243,8 @@ export async function processInboundEmail(
       facts,
       status,
       identity.verifiedPatientId ?? thread.verified_patient_id,
-      history
+      history,
+      { analysis: classification, replyLanguage }
     );
     return;
   }
@@ -195,11 +268,12 @@ export async function processInboundEmail(
     facts,
     status,
     thread.verified_patient_id,
-    history
+    history,
+    { analysis: classification, replyLanguage }
   );
 }
 
-async function gatherFactsOpenAccess(
+export async function gatherFactsOpenAccess(
   intent: EmailIntent,
   patientId: string | null,
   body: string,
@@ -313,25 +387,44 @@ async function sendReplyAndUpdateThread(
   facts: ProcessorFacts,
   status: ThreadStatus,
   verifiedPatientId: string | null,
-  history: EmailMessage[]
+  history: EmailMessage[],
+  options?: {
+    replyText?: string;
+    analysis?: ClassificationResult;
+    replyLanguage?: PatientLanguage;
+  }
 ): Promise<void> {
-  const replyText = await generateReply(
-    intent,
-    payload.text,
-    facts,
-    history,
-    thread
-  );
+  const lang: PatientLanguage =
+    options?.replyLanguage ?? facts.replyLanguage ?? "en";
+  let replyText =
+    options?.replyText ??
+    (await generateReply(intent, payload.text, facts, history, thread, {
+      threadIdForUsage: thread.id,
+    }));
+
+  if (
+    !options?.replyText &&
+    options?.analysis?.shouldAskResolutionFeedback &&
+    threadFeedbackStage(thread) === "none"
+  ) {
+    replyText = appendResolutionPrompt(replyText, lang);
+    await updateThreadFeedbackStage(thread.id, "awaiting_resolution");
+  }
 
   const replySubject = payload.subject.replace(/^(re:\s*)+/i, "");
   const lastInbound = await getLastInboundMessageId(thread.id, payload);
 
   let attachments: EmailAttachment[] | undefined;
-  if (facts.soapNotePdfAttached && facts.soapNote) {
+  const { attach, soapNote } = resolveOutboundSoapAttachment(
+    options?.analysis,
+    facts
+  );
+  if (attach && soapNote) {
+    const note = soapNote;
     attachments = [
       {
-        filename: soapNotePdfFilename(facts.soapNote),
-        content: await buildSoapNotePdf(facts.soapNote),
+        filename: soapNotePdfFilename(note),
+        content: await buildSoapNotePdf(note),
       },
     ];
   }
@@ -352,18 +445,6 @@ async function sendReplyAndUpdateThread(
     verified_patient_id: verifiedPatientId,
     message_id_root: thread.message_id_root ?? payload.messageId ?? null,
   });
-}
-
-function inferPriorIntent(last: EmailIntent | null): EmailIntent | null {
-  if (!last) return null;
-  if (
-    last === "provide_dob" ||
-    last === "provide_identity" ||
-    last === "provide_encounter_date"
-  ) {
-    return "appointment";
-  }
-  return last;
 }
 
 async function getLastInboundMessageId(

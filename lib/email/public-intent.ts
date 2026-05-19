@@ -8,7 +8,7 @@ const LOCATION_PATTERNS =
   /\b(address|address(es)?|location|locations|where (are you|is the clinic|can i find)|directions|office hours|opening hours|hours of operation|which clinic|nearest clinic|find (a |the )?clinic|clinic (location|address|near))\b/i;
 
 const SOAP_NOTE_PATTERNS =
-  /\b(soap\s*notes?|visit\s+notes?|clinical\s+notes?|medical\s+summar(y|ies))\b/i;
+  /\b(soap\s*notes?|visit\s+notes?|clinical\s+notes?|medical\s+summar(y|ies)|nota\s+soap|notas?\s+cl[ií]nicas?|resumen\s+m[eé]dico)\b/i;
 
 const PRIVATE_PATTERNS =
   /\b(medical record|my appointment|my (visit|encounter)|date of birth|dob)\b/i;
@@ -46,16 +46,31 @@ function isSoapThreadFollowUp(
   return !!(hints.name && hints.dob) || !!hints.dob;
 }
 
+/** Patient follow-ups on an in-progress SOAP request (not a new topic). */
+const SOAP_THREAD_FOLLOWUP =
+  /\b(any update|update\??|status|follow.?up|still waiting|checking in|reminder|did you (get|receive)|have you (sent|found)|where is my|waiting for)\b/i;
+
 export function resolveIntent(
   classified: EmailIntent,
   body: string,
   lastIntent: EmailIntent | null,
   verificationDisabled = false
 ): EmailIntent {
-  if (detectSoapNoteFromText(body)) return "soap_note";
-
   const fromText = detectPublicIntentFromText(body);
   if (fromText) return fromText;
+
+  if (lastIntent === "soap_note") {
+    if (SOAP_THREAD_FOLLOWUP.test(body)) return "soap_note";
+    if (isSoapThreadFollowUp(classified, body, lastIntent)) return "soap_note";
+    if (
+      classified === "unknown" ||
+      classified === "greeting" ||
+      classified === "provide_dob" ||
+      classified === "provide_identity"
+    ) {
+      return "soap_note";
+    }
+  }
 
   if (isSoapThreadFollowUp(classified, body, lastIntent)) return "soap_note";
 
